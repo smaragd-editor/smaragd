@@ -85,11 +85,23 @@
     persist();
   }
 
+  // A real toggle: clicking an already-*active* panel's button closes it;
+  // clicking an open-but-inactive one (e.g. buried behind another tab in
+  // the same group) just brings it to front, same as before — closing that
+  // case too would be surprising (the user asked to see it, not hide a
+  // panel they weren't even looking at). Every caller (the Window-menu
+  // buttons below, View/Tools/Versions menu items, and every
+  // DOCK_TAB_ACTIONS shortcut in shortcuts.ts — several literally named
+  // "toggle_*") wants exactly this.
   export function openPanel(id: string) {
     if (!api) return;
     const existing = api.getPanel(id);
     if (existing) {
-      existing.api.setActive();
+      if (existing.api.isActive) {
+        existing.api.close();
+      } else {
+        existing.api.setActive();
+      }
       return;
     }
     api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
