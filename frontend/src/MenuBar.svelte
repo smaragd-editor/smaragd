@@ -62,9 +62,10 @@
   // core::editor::EditorState — this port's document model has no tabs for
   // that state to live on.
   //
-  // Submenus (Recent Projects, Import's per-format choice, Color Binder
-  // By) are flattened or replaced with a native file-picker's own format
-  // filter rather than built as true nested flyouts — a scope cut.
+  // Recent Projects is still flattened (it's not built at all, see above)
+  // rather than a true nested flyout — a scope cut; Import's per-format
+  // choice and Color Binder By are real flyouts now, same `submenu` Item
+  // variant.
   let openMenu = $state<string | null>(null);
 
   type Item =
@@ -250,10 +251,15 @@
         { label: "Go Back", action: () => runShortcutAction("go_back") },
         { label: "Go Forward", action: () => runShortcutAction("go_forward") },
         { separator: true },
-        { label: "Import Word Document (.docx)…", action: () => pickAndImport("docx") },
-        { label: "Import EPUB (.epub)…", action: () => pickAndImport("epub") },
-        { label: "Import PDF (.pdf)…", action: () => pickAndImport("pdf") },
-        { label: "Import Scrivener Project…", action: pickAndImportScrivener },
+        {
+          label: "Import",
+          submenu: () => [
+            { label: "Word Document (.docx)…", action: () => pickAndImport("docx") },
+            { label: "EPUB (.epub)…", action: () => pickAndImport("epub") },
+            { label: "PDF (.pdf)…", action: () => pickAndImport("pdf") },
+            { label: "Scrivener Project…", action: pickAndImportScrivener },
+          ],
+        },
         { label: "Export Manuscript…", action: () => requestExport(), disabled: !hasProject },
         { separator: true },
         { label: "Settings…", action: () => (showSettings = true) },
