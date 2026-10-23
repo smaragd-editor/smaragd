@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { dockLayoutRegistry } from "./dockLayoutRegistry.svelte";
 import { showToast } from "./toast.svelte";
-import { settingsStore } from "./settings.svelte";
+import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -91,6 +91,23 @@ export function openFindReplace() {
   editorRef?.openFindReplace();
 }
 
+// Mirrors core::settings::Settings::record_recent_project exactly (most-
+// recent-first, de-duplicated, capped) — done here rather than as a Tauri
+// command since settingsStore is already loaded client-side and every
+// other settings mutation already goes through this same mutate-then-
+// saveSettingsDebounced pattern.
+const MAX_RECENT_PROJECTS = 10;
+
+function recordRecentProject(root: string) {
+  settingsStore.value.last_project_path = root;
+  settingsStore.value.recent_project_paths = [
+    root,
+    ...settingsStore.value.recent_project_paths.filter((p) => p !== root),
+  ].slice(0, MAX_RECENT_PROJECTS);
+  settingsStore.value = { ...settingsStore.value };
+  saveSettingsDebounced();
+}
+
 export async function openProject(root: string) {
   project.openError = null;
   project.value = null;
@@ -99,6 +116,7 @@ export async function openProject(root: string) {
   project.previewHtml = "";
   try {
     project.value = await invoke<ProjectSummary>("project_open", { root });
+    recordRecentProject(root);
   } catch (err) {
     project.openError = String(err);
   }
@@ -112,6 +130,7 @@ export async function createProject(root: string) {
   project.previewHtml = "";
   try {
     project.value = await invoke<ProjectSummary>("project_create", { root });
+    recordRecentProject(root);
   } catch (err) {
     project.openError = String(err);
   }

@@ -17,7 +17,7 @@
   import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
   import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction, registerShortcutHandler } from "./shortcuts";
-  import { notImplemented, showToast } from "./stores/toast.svelte";
+  import { showToast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
   import { exportRequest, requestExport, closeExportRequest } from "./stores/exportRequest.svelte";
 
@@ -30,13 +30,12 @@
   // notImplemented() placeholders until this pass, listed for structural
   // fidelity first and wired for real once a user asked for them.
   //
-  // Still genuinely stubbed, deliberately: Recent Projects (a whole
-  // submenu UI, out of this pass's scope) and Reload Plugins/Enable
-  // Project Plugins — that one is different in kind, not just unfinished:
-  // there is no plugin engine anywhere in this Tauri port (no Rhai
-  // scripting, no :command registration), so there's nothing to reload.
-  // It's left as a clear "no plugin engine in this build" message rather
-  // than faked as if a real action were just missing its wiring.
+  // Still genuinely stubbed, deliberately: Reload Plugins/Enable Project
+  // Plugins — different in kind, not just unfinished: there is no plugin
+  // engine anywhere in this Tauri port (no Rhai scripting, no :command
+  // registration), so there's nothing to reload. It's left as a clear
+  // "no plugin engine in this build" message rather than faked as if a
+  // real action were just missing its wiring.
   //
   // New Project prompts for a name then reuses the same folder picker Open
   // Project does, rather than a dedicated creation wizard. Exit flushes any
@@ -62,10 +61,11 @@
   // core::editor::EditorState — this port's document model has no tabs for
   // that state to live on.
   //
-  // Recent Projects is still flattened (it's not built at all, see above)
-  // rather than a true nested flyout — a scope cut; Import's per-format
-  // choice and Color Binder By are real flyouts now, same `submenu` Item
-  // variant.
+  // Recent Projects, Import's per-format choice, Theme, and Color Binder
+  // By are all real flyouts now, the same `submenu` Item variant — Recent
+  // Projects is backed by settingsStore.value.recent_project_paths,
+  // recorded on every successful open/create (stores/project.svelte.ts's
+  // recordRecentProject).
   let openMenu = $state<string | null>(null);
 
   type Item =
@@ -241,7 +241,7 @@
       items: () => [
         { label: "New Project…", action: pickAndCreateProject },
         { label: "Open Project…", action: pickAndOpenProject },
-        { label: "Recent Projects", action: () => notImplemented("Recent Projects") },
+        { label: "Recent Projects", submenu: recentProjectsSubmenuItems },
         { label: "Close Project", action: closeProject, disabled: !hasProject },
         { separator: true },
         { label: "Open Document…", action: () => runShortcutAction("open_document") },
@@ -418,6 +418,21 @@
     { mode: "Pov", label: "POV" },
     { mode: "WordCountProgress", label: "Word Count" },
   ];
+
+  // Recorded on every successful open/create (stores/project.svelte.ts's
+  // recordRecentProject, mirroring core::settings::Settings::
+  // record_recent_project's most-recent-first/de-duped/capped shape) —
+  // this submenu just reads that list back.
+  function recentProjectsSubmenuItems(): Item[] {
+    const paths = settingsStore.value.recent_project_paths;
+    if (paths.length === 0) {
+      return [{ label: "No recent projects", action: () => {}, disabled: true }];
+    }
+    return paths.map((path) => ({
+      label: path.split("/").pop() || path,
+      action: () => openProject(path),
+    }));
+  }
 
   function colorBinderBySubmenuItems(): Item[] {
     return BINDER_COLOR_MODES.map(({ mode, label }) => ({
