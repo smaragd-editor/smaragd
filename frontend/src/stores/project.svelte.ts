@@ -19,7 +19,14 @@ import { settingsStore } from "./settings.svelte";
 export type DocumentStats = { lines: number; words: number; chars: number };
 
 export type BinderNodeDto =
-  | { kind: "Folder"; name: string; path: string; color: string | null; children: BinderNodeDto[] }
+  | {
+      kind: "Folder";
+      name: string;
+      path: string;
+      color: string | null;
+      role: FolderRole | null;
+      children: BinderNodeDto[];
+    }
   | {
       kind: "Document";
       name: string;

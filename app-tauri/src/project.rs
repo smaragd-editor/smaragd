@@ -16,6 +16,7 @@ pub enum BinderNodeDto {
         name: String,
         path: String,
         color: Option<String>,
+        role: Option<FolderRole>,
         children: Vec<BinderNodeDto>,
     },
     Document {
@@ -143,6 +144,7 @@ fn build_node_dto(
             name: node.name.clone(),
             path: node.path.display().to_string(),
             color: folder_color(project, mode, &node.path, folder_word_counts),
+            role: project.folder_role(&node.path),
             children: children
                 .iter()
                 .map(|child| build_node_dto(project, mode, child, folder_word_counts))

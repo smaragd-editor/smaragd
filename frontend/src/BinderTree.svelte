@@ -24,6 +24,15 @@
 
   const FOLDER_ROLES: FolderRole[] = ["Research", "Trash", "Templates", "Manuscript", "World"];
 
+  // Matches app/src/ui/binder_panel.rs's role_prefix exactly.
+  const ROLE_ICONS: Record<FolderRole, string> = {
+    Research: "🔍",
+    Trash: "🗑",
+    Templates: "📋",
+    Manuscript: "📖",
+    World: "🌐",
+  };
+
   type PicklistField = "Type" | "Pov" | "Status";
   const PICKLIST_FIELDS: { field: PicklistField; label: string }[] = [
     { field: "Type", label: "Type" },
@@ -284,6 +293,9 @@
       >
         {#if n.color}
           <span class="color-dot" style="background: {n.color};"></span>
+        {/if}
+        {#if n.role}
+          <span class="role-icon" title={n.role}>{ROLE_ICONS[n.role]}</span>
         {/if}
         <span class="name">{n.name}</span>
         <span class="actions">
@@ -580,6 +592,12 @@
     height: 0.6rem;
     border-radius: 50%;
     flex-shrink: 0;
+  }
+
+  .role-icon {
+    flex-shrink: 0;
+    font-size: 0.85em;
+    line-height: 1;
   }
 
   /* Toggle Document Stats in Binder — "lines/words/chars", same compact
