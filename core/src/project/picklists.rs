@@ -11,7 +11,7 @@ use super::*;
 /// `type_picklist_folder`/`pov_picklist_folder`/`status_picklist_folder`), so —
 /// unlike `FolderRole`'s single shared map — assigning one field's folder never
 /// affects another field's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PicklistField {
     Type,
     Pov,

@@ -14,7 +14,7 @@ use std::path::Path;
 use serde::Serialize;
 use smaragd_core::project::Project;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
-use smaragd_core::project::{BinderColorMode, FolderRole};
+use smaragd_core::project::{BinderColorMode, FolderRole, PicklistField};
 
 fn load(root: &str) -> Result<Project, String> {
     Project::load_from_folder(Path::new(root)).map_err(|e| e.to_string())
@@ -118,6 +118,31 @@ pub fn folder_role(root: String, path: String) -> Result<Option<FolderRole>, Str
 pub fn is_trashed(root: String, path: String) -> Result<bool, String> {
     let project = load(&root)?;
     Ok(project.trashed_origin(Path::new(&path)).is_some())
+}
+
+/// Whether `path` is `field`'s currently assigned "Dropdown Source" folder
+/// — the Binder context menu's "Dropdown Source" submenu checkboxes.
+#[tauri::command]
+pub fn is_picklist_folder(
+    root: String,
+    field: PicklistField,
+    path: String,
+) -> Result<bool, String> {
+    let project = load(&root)?;
+    Ok(project.is_picklist_folder(field, Path::new(&path)))
+}
+
+/// `path: None` clears `field`'s assignment.
+#[tauri::command]
+pub fn set_picklist_folder(
+    root: String,
+    field: PicklistField,
+    path: Option<String>,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_picklist_folder(field, path.as_deref().map(Path::new))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

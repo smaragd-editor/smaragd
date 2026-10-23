@@ -13,6 +13,7 @@
   } from "./stores/project.svelte";
   import { settingsStore } from "./stores/settings.svelte";
   import { showToast } from "./stores/toast.svelte";
+  import { requestExport } from "./stores/exportRequest.svelte";
 
   const colorModeLabels: Record<string, string> = {
     Off: "Off",
@@ -22,6 +23,13 @@
   };
 
   const FOLDER_ROLES: FolderRole[] = ["Research", "Trash", "Templates", "Manuscript", "World"];
+
+  type PicklistField = "Type" | "Pov" | "Status";
+  const PICKLIST_FIELDS: { field: PicklistField; label: string }[] = [
+    { field: "Type", label: "Type" },
+    { field: "Pov", label: "POV" },
+    { field: "Status", label: "Status" },
+  ];
 
   // Phase 4: the real Binder, replacing Phase 2's read-only recursive list —
   // create/rename/delete and drag-and-drop move/reorder, all round-tripping
@@ -163,17 +171,23 @@
   }
 
   // Right-click context menu — matches the real egui app's folder/document
-  // menus (app/src/ui/binder_panel.rs), minus New From Template, Export…,
-  // and Dropdown Source: template picking, per-folder export, and picklist-
-  // source folders aren't built in this port yet, same scope cut as
-  // everywhere else. The existing hover-revealed buttons above are kept as
-  // they are rather than replaced by this — a touch device has no
-  // right-click/contextmenu event at all, so they're still the only way in
-  // on mobile.
+  // menus (app/src/ui/binder_panel.rs) as closely as this port's own
+  // simplifications allow: flyout submenus are plain CSS hover (no
+  // keyboard-navigable flyout, unlike egui's), and new-item/rename naming
+  // still uses the browser's own prompt() rather than an in-app modal. The
+  // existing hover-revealed buttons above are kept as they are rather than
+  // replaced by this — a touch device has no right-click/contextmenu event
+  // (or CSS :hover) at all, so they're still the only way in on mobile.
   type ContextMenuState = { x: number; y: number; node: BinderNodeDto; isRoot: boolean };
   let contextMenu = $state<ContextMenuState | null>(null);
   let contextMenuRole = $state<FolderRole | null>(null);
   let contextMenuTrashed = $state(false);
+  let contextMenuTemplates = $state<{ path: string; name: string }[]>([]);
+  let contextMenuPicklist = $state<Record<PicklistField, boolean>>({
+    Type: false,
+    Pov: false,
+    Status: false,
+  });
 
   async function openContextMenu(e: MouseEvent, n: BinderNodeDto) {
     e.preventDefault();
@@ -182,20 +196,61 @@
     contextMenu = { x: e.clientX, y: e.clientY, node: n, isRoot };
     contextMenuRole = null;
     contextMenuTrashed = false;
+    contextMenuTemplates = [];
+    contextMenuPicklist = { Type: false, Pov: false, Status: false };
+    // "New From Template" and "Export…" apply to the project root too —
+    // only Rename/Delete/Restore/Folder Role/Dropdown Source/Empty Trash
+    // are excluded there, same as the real app's `is_root` check.
+    if (n.kind === "Folder") {
+      contextMenuTemplates = await invoke<{ path: string; name: string }[]>("template_documents", {
+        root,
+      });
+    }
     if (isRoot) return;
+    contextMenuTrashed = await invoke<boolean>("is_trashed", { root, path: n.path });
     if (n.kind === "Folder") {
       contextMenuRole = await invoke<FolderRole | null>("folder_role", { root, path: n.path });
+      const [type, pov, status] = await Promise.all(
+        PICKLIST_FIELDS.map(({ field }) =>
+          invoke<boolean>("is_picklist_folder", { root, field, path: n.path }),
+        ),
+      );
+      contextMenuPicklist = { Type: type, Pov: pov, Status: status };
     }
-    contextMenuTrashed = await invoke<boolean>("is_trashed", { root, path: n.path });
   }
 
   function closeContextMenu() {
     contextMenu = null;
   }
 
+  async function createFromTemplate(parent: string, template: { path: string; name: string }) {
+    const name = window.prompt("New document name:", template.name);
+    if (!name) return;
+    const result = await run(
+      invoke<{ tree: BinderNodeDto; path: string; cursor: number | null }>(
+        "binder_create_document_from_template",
+        { root, parent, name, templatePath: template.path },
+      ),
+    );
+    if (result) {
+      onTreeChange(result.tree);
+      openDocument(result.path);
+    }
+  }
+
   async function setRole(path: string, role: FolderRole | null) {
     try {
       await invoke("set_folder_role", { root, path, role });
+    } catch (err) {
+      showToast(String(err));
+    } finally {
+      closeContextMenu();
+    }
+  }
+
+  async function togglePicklistFolder(path: string, field: PicklistField, checked: boolean) {
+    try {
+      await invoke("set_picklist_folder", { root, field, path: checked ? path : null });
     } catch (err) {
       showToast(String(err));
     } finally {
@@ -310,7 +365,7 @@
           closeContextMenu();
         }}
       >
-        New Document
+        New File
       </button>
       <button
         onclick={() => {
@@ -319,6 +374,33 @@
         }}
       >
         New Folder
+      </button>
+      {#if contextMenuTemplates.length > 0}
+        <div class="submenu-trigger">
+          <span>New From Template</span>
+          <span class="arrow">▸</span>
+          <div class="submenu">
+            {#each contextMenuTemplates as template (template.path)}
+              <button
+                onclick={() => {
+                  createFromTemplate(menuNode.path, template);
+                  closeContextMenu();
+                }}
+              >
+                {template.name}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+      <div class="menu-separator"></div>
+      <button
+        onclick={() => {
+          requestExport(menuNode.path);
+          closeContextMenu();
+        }}
+      >
+        Export…
       </button>
       {#if !contextMenu.isRoot}
         <div class="menu-separator"></div>
@@ -349,17 +431,37 @@
           </button>
         {/if}
         <div class="menu-separator"></div>
-        <div class="menu-label">Folder Role</div>
-        {#each FOLDER_ROLES as role (role)}
-          <button class="menu-radio" onclick={() => setRole(menuNode.path, role)}>
-            <span class="radio-dot" class:checked={contextMenuRole === role}></span>
-            {role}
-          </button>
-        {/each}
-        <button class="menu-radio" onclick={() => setRole(menuNode.path, null)}>
-          <span class="radio-dot" class:checked={contextMenuRole === null}></span>
-          None
-        </button>
+        <div class="submenu-trigger">
+          <span>Folder Role</span>
+          <span class="arrow">▸</span>
+          <div class="submenu">
+            {#each FOLDER_ROLES as role (role)}
+              <button class="menu-radio" onclick={() => setRole(menuNode.path, role)}>
+                <span class="radio-dot" class:checked={contextMenuRole === role}></span>
+                {role}
+              </button>
+            {/each}
+            <button class="menu-radio" onclick={() => setRole(menuNode.path, null)}>
+              <span class="radio-dot" class:checked={contextMenuRole === null}></span>
+              None
+            </button>
+          </div>
+        </div>
+        <div class="submenu-trigger">
+          <span>Dropdown Source</span>
+          <span class="arrow">▸</span>
+          <div class="submenu">
+            {#each PICKLIST_FIELDS as { field, label } (field)}
+              <button
+                class="menu-checkbox"
+                onclick={() => togglePicklistFolder(menuNode.path, field, !contextMenuPicklist[field])}
+              >
+                <input type="checkbox" checked={contextMenuPicklist[field]} tabindex="-1" />
+                {label}
+              </button>
+            {/each}
+          </div>
+        </div>
         {#if contextMenuRole === "Trash"}
           <div class="menu-separator"></div>
           <button onclick={doEmptyTrash}>Empty Trash</button>
@@ -552,13 +654,6 @@
     margin: 0.25rem 0;
   }
 
-  .menu-label {
-    padding: 0.2rem 0.75rem;
-    color: var(--color-fg-muted);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-  }
-
   .menu-radio {
     padding-left: 1.1rem;
   }
@@ -574,5 +669,54 @@
   .radio-dot.checked {
     background: var(--color-accent);
     border-color: var(--color-accent);
+  }
+
+  .menu-checkbox input {
+    pointer-events: none;
+  }
+
+  /* Flyout submenus (New From Template/Folder Role/Dropdown Source) — plain
+     CSS :hover/:focus-within, same "flattened, not a true nested flyout"
+     tradeoff this port already makes elsewhere (MenuBar.svelte's own
+     Color Binder By), except here it's a real flyout since matching the
+     egui app's look was the whole point. Mouse-only: a touch device has
+     no :hover at all, same limitation the contextmenu event itself has. */
+  .submenu-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.3rem 0.75rem;
+    cursor: default;
+  }
+
+  .submenu-trigger:hover,
+  .submenu-trigger:focus-within {
+    background: var(--color-selected-bg);
+  }
+
+  .submenu-trigger .arrow {
+    color: var(--color-fg-muted);
+    font-size: 0.7rem;
+  }
+
+  .submenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: -0.25rem;
+    min-width: 10rem;
+    flex-direction: column;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    padding: 0.25rem 0;
+  }
+
+  .submenu-trigger:hover > .submenu,
+  .submenu-trigger:focus-within > .submenu {
+    display: flex;
   }
 </style>

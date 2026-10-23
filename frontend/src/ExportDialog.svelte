@@ -10,7 +10,13 @@
   // mirrors the real File menu's three-way branch: zero Manuscript-role
   // folders exports the whole project root, one exports it directly, two
   // or more asks which — here, as a plain select rather than a submenu.
-  let { onClose }: { onClose: () => void } = $props();
+  //
+  // `initialFolder` backs the Binder context menu's "Export…" item — the
+  // real app's own `BinderEvent::Export` opens this same panel pre-set to
+  // `source: path`, whatever folder was right-clicked, not just a
+  // Manuscript-role one.
+  let { onClose, initialFolder = null }: { onClose: () => void; initialFolder?: string | null } =
+    $props();
 
   type ManuscriptFolder = { path: string; name: string };
 
@@ -28,7 +34,18 @@
       folders = await invoke<ManuscriptFolder[]>("manuscript_folders", {
         root: project.value!.root,
       });
-      folder = folders[0]?.path ?? project.value!.root;
+      if (initialFolder) {
+        if (!folders.some((f) => f.path === initialFolder)) {
+          const name =
+            initialFolder === project.value!.root
+              ? "(Project Root)"
+              : (initialFolder.split("/").pop() ?? initialFolder);
+          folders = [{ path: initialFolder, name }, ...folders];
+        }
+        folder = initialFolder;
+      } else {
+        folder = folders[0]?.path ?? project.value!.root;
+      }
       title = project.value!.book_title ?? "";
     } catch (err) {
       error = String(err);

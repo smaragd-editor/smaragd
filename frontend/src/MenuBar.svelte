@@ -16,6 +16,7 @@
   import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction, registerShortcutHandler } from "./shortcuts";
   import { notImplemented, showToast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
+  import { exportRequest, requestExport, closeExportRequest } from "./stores/exportRequest.svelte";
 
   // Desktop menu bar matching the real egui app's 8-menu structure
   // (app/src/app/menu_bar.rs) as closely as this port's actual
@@ -210,7 +211,7 @@
         { label: "Import EPUB (.epub)…", action: () => pickAndImport("epub") },
         { label: "Import PDF (.pdf)…", action: () => pickAndImport("pdf") },
         { label: "Import Scrivener Project…", action: pickAndImportScrivener },
-        { label: "Export Manuscript…", action: () => (showExport = true), disabled: !hasProject },
+        { label: "Export Manuscript…", action: () => requestExport(), disabled: !hasProject },
         { separator: true },
         { label: "Settings…", action: () => (showSettings = true) },
         {
@@ -353,7 +354,6 @@
   let showCommandPrompt = $state(false);
   let showSearchEverywhere = $state(false);
   let showRecentFiles = $state(false);
-  let showExport = $state(false);
   let showGitCommit = $state(false);
   let gitCommitAndPush = $state(false);
 
@@ -469,9 +469,9 @@
   {/await}
 {/if}
 
-{#if showExport}
+{#if exportRequest.open}
   {#await import("./ExportDialog.svelte") then { default: ExportDialog }}
-    <ExportDialog onClose={() => (showExport = false)} />
+    <ExportDialog onClose={closeExportRequest} initialFolder={exportRequest.folder} />
   {/await}
 {/if}
 

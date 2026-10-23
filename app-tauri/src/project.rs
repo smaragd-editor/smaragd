@@ -313,6 +313,60 @@ pub fn binder_create_document(
     })
 }
 
+#[derive(Serialize)]
+pub struct TemplateDocument {
+    path: String,
+    name: String,
+}
+
+/// The Binder context menu's "New From Template" submenu candidates — the
+/// Templates-role folder's direct child documents.
+#[tauri::command]
+pub fn template_documents(root: String) -> Result<Vec<TemplateDocument>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .template_documents()
+        .into_iter()
+        .map(|node| TemplateDocument {
+            path: node.path.display().to_string(),
+            name: node.name.clone(),
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+pub struct CreateFromTemplateResult {
+    tree: BinderNodeDto,
+    path: String,
+    cursor: Option<usize>,
+}
+
+#[tauri::command]
+pub fn binder_create_document_from_template(
+    root: String,
+    parent: String,
+    name: String,
+    template_path: String,
+) -> Result<CreateFromTemplateResult, String> {
+    let mut project = load(&root)?;
+    let settings = global_settings();
+    let (path, cursor) = project
+        .create_document_from_template(
+            Path::new(&parent),
+            &name,
+            Path::new(&template_path),
+            &settings.template_date_format,
+            &settings.template_time_format,
+        )
+        .map_err(|e| e.to_string())?;
+    project.rescan();
+    Ok(CreateFromTemplateResult {
+        tree: build_tree(&project),
+        path: path.display().to_string(),
+        cursor,
+    })
+}
+
 #[tauri::command]
 pub fn binder_create_folder(
     root: String,
