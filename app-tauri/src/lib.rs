@@ -5,6 +5,7 @@ mod panels;
 mod pomodoro;
 mod project;
 mod settings;
+mod spellcheck;
 mod story_cards;
 mod sync;
 
@@ -71,6 +72,9 @@ pub fn run() {
             settings::settings_load,
             settings::settings_save,
             settings::color_themes_list,
+            spellcheck::spell_check_catalog,
+            spellcheck::spell_check_download,
+            spellcheck::spell_check_misspellings,
             git_ops::git_commit_message_preview,
             git_ops::git_commit,
             git_ops::git_push,

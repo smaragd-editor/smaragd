@@ -217,6 +217,13 @@ pub struct Settings {
     /// field (`app/src/settings.rs`), added once the Binder actually had a
     /// row to show it on.
     pub show_document_stats_in_binder: bool,
+
+    /// Which dictionary (if any) flags misspelled words in the Editor — see
+    /// `crate::spellcheck`. Unlike the real app, this is the *only* place the
+    /// active language lives in this port (no per-project remembered
+    /// language on toggle-off — see shortcuts.ts's `toggle_spell_check`
+    /// handler for that simplification).
+    pub spell_check_language: crate::spellcheck::SpellCheckLanguage,
 }
 
 /// `~/.config/smaragd-tauri/smaragd-tauri.toml` on Linux, the platform

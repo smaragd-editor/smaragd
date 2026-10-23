@@ -1,19 +1,40 @@
 <script lang="ts">
-  import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { settingsStore, saveSettingsDebounced, refreshSpellCheckCatalog } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, SHORTCUT_CATEGORIES, effectiveCombo, setShortcut } from "./shortcuts";
   import type { KeyCombo } from "./stores/settings.svelte";
   import { applyTheme } from "./stores/theme.svelte";
+  import { recheckSpelling } from "./stores/project.svelte";
 
   // Settings dialog matching the real egui app's 9-category structure
   // (app/src/ui/settings_panel.rs) — General, Appearance, Editor,
   // SpellCheck, Templates, Versions, Sync, Pomodoro, Shortcuts, in that
   // order. Every field here is real (persists through core::settings::
-  // Settings via settings_save) but several don't have a functional
-  // consumer in this build yet — SpellCheck and Sync tabs are placeholders
-  // for exactly that reason (no dictionary catalog, no real sync pairing —
-  // Phase 6's Sync panel is demo-only), noted inline rather than silently
-  // omitted, same as every other scope cut in this port.
+  // Settings via settings_save) but a couple don't have a functional
+  // consumer in this build yet — Sync is a placeholder for exactly that
+  // reason (no real sync pairing — Phase 6's Sync panel is demo-only),
+  // noted inline rather than silently omitted, same as every other scope
+  // cut in this port. Spell Check now has a real one.
   let { onClose }: { onClose: () => void } = $props();
+
+  let downloading = $state<string | null>(null);
+
+  async function downloadDictionary(language: string) {
+    downloading = language;
+    try {
+      await invoke("spell_check_download", { language });
+      await refreshSpellCheckCatalog();
+    } catch (err) {
+      alert(`Couldn't download: ${err}`);
+    } finally {
+      downloading = null;
+    }
+  }
+
+  function changeSpellCheckLanguage() {
+    update();
+    recheckSpelling();
+  }
 
   type Category =
     | "General"
@@ -202,10 +223,35 @@
             change its behavior yet.
           </p>
         {:else if active === "SpellCheck"}
+          <label class="row">
+            Language
+            <select bind:value={settingsStore.value.spell_check_language} onchange={changeSpellCheckLanguage}>
+              {#each settingsStore.spellCheckCatalog as entry (entry.language)}
+                <option value={entry.language}>{entry.label}</option>
+              {/each}
+            </select>
+          </label>
           <p class="note">
-            Spell checking isn't built in this Tauri port yet (no dictionary catalog, no
-            in-editor flagging). Reserved tab, matching the real app's structure.
+            English and Norwegian (Bokmål) work immediately via a tiny bundled word list; every
+            other language (and a fuller English/Norwegian dictionary) needs downloading below.
           </p>
+          <ul class="dictionary-list">
+            {#each settingsStore.spellCheckCatalog.filter((e) => e.language !== "Off") as entry (entry.language)}
+              <li>
+                <span>{entry.label}</span>
+                {#if entry.downloaded}
+                  <span class="downloaded">Downloaded</span>
+                {:else}
+                  <button
+                    disabled={downloading === entry.language}
+                    onclick={() => downloadDictionary(entry.language)}
+                  >
+                    {downloading === entry.language ? "Downloading…" : "Download"}
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
         {:else if active === "Templates"}
           <label class="row">
             Date format for {"${{date}}"}
@@ -463,6 +509,27 @@
     font-size: 0.8rem;
     color: var(--color-fg-muted);
     font-style: italic;
+  }
+
+  .dictionary-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 24rem;
+  }
+
+  .dictionary-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.85rem;
+  }
+
+  .downloaded {
+    color: var(--color-success);
+    font-size: 0.8rem;
   }
 
   table {

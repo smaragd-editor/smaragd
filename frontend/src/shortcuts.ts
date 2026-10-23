@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { KeyCombo } from "./stores/settings.svelte";
+import type { KeyCombo, SpellCheckLanguage } from "./stores/settings.svelte";
 import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
 import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
 import { wordCountRegistry } from "./stores/wordCountRegistry.svelte";
@@ -27,6 +27,7 @@ import {
   goBackDocument,
   goForwardDocument,
   flushBeforeExit,
+  recheckSpelling,
 } from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
@@ -329,6 +330,24 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
   registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
   registerShortcutHandler("toggle_focus_mode", toggleFocusMode);
+
+  // A simplification from the real app's per-project remembered language on
+  // toggle-off (core::project::ProjectMeta::last_spell_check_language) — this
+  // port has one global Settings field and no per-project memory, so the
+  // "last used" language is just remembered here, in memory, for this
+  // session only.
+  let lastSpellCheckLanguage: SpellCheckLanguage = "English";
+  registerShortcutHandler("toggle_spell_check", () => {
+    if (settingsStore.value.spell_check_language !== "Off") {
+      lastSpellCheckLanguage = settingsStore.value.spell_check_language;
+      settingsStore.value.spell_check_language = "Off";
+    } else {
+      settingsStore.value.spell_check_language = lastSpellCheckLanguage;
+    }
+    settingsStore.value = { ...settingsStore.value };
+    saveSettingsDebounced();
+    recheckSpelling();
+  });
   registerShortcutHandler("cycle_binder_color_mode", cycleBinderColorMode);
   registerShortcutHandler("go_back", goBackDocument);
   registerShortcutHandler("go_forward", goForwardDocument);

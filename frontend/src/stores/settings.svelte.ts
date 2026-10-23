@@ -5,6 +5,32 @@ import { invoke } from "@tauri-apps/api/core";
 // module's doc comment for why the two apps never share a settings file.
 export type KeyCombo = { key: string; ctrl_or_cmd: boolean; shift: boolean; alt: boolean };
 export type ThemePreference = "system" | "dark" | "light";
+
+// Mirrors core::spellcheck::SpellCheckLanguage's 21 unit variants exactly —
+// serde's default plain-string representation for a unit-variant enum, so
+// this is also exactly what `spell_check_catalog`/the command params expect.
+export type SpellCheckLanguage =
+  | "Off"
+  | "English"
+  | "EnglishBritish"
+  | "Norwegian"
+  | "NorwegianNynorsk"
+  | "Georgian"
+  | "Lithuanian"
+  | "Russian"
+  | "Persian"
+  | "Interlingue"
+  | "Turkmen"
+  | "French"
+  | "Spanish"
+  | "PortugueseBrazil"
+  | "PortuguesePortugal"
+  | "Italian"
+  | "Swedish"
+  | "Danish"
+  | "German"
+  | "Dutch"
+  | "Polish";
 export type EditorFontId =
   | "Proportional"
   | "Monospace"
@@ -44,6 +70,7 @@ export type Settings = {
   ui_scale: number;
   double_shift_search_disabled: boolean;
   show_document_stats_in_binder: boolean;
+  spell_check_language: SpellCheckLanguage;
 };
 
 export type ColorTheme = {
@@ -89,13 +116,22 @@ function defaults(): Settings {
     ui_scale: 0,
     double_shift_search_disabled: false,
     show_document_stats_in_binder: false,
+    spell_check_language: "Off",
   };
 }
 
-export const settingsStore = $state<{ value: Settings; loaded: boolean; colorThemes: ColorTheme[] }>({
+export type SpellCheckLanguageEntry = { language: SpellCheckLanguage; label: string; downloaded: boolean };
+
+export const settingsStore = $state<{
+  value: Settings;
+  loaded: boolean;
+  colorThemes: ColorTheme[];
+  spellCheckCatalog: SpellCheckLanguageEntry[];
+}>({
   value: defaults(),
   loaded: false,
   colorThemes: [],
+  spellCheckCatalog: [],
 });
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,7 +147,20 @@ export async function loadSettings() {
   } catch {
     settingsStore.colorThemes = [];
   }
+  try {
+    settingsStore.spellCheckCatalog = await invoke<SpellCheckLanguageEntry[]>("spell_check_catalog");
+  } catch {
+    settingsStore.spellCheckCatalog = [];
+  }
   settingsStore.loaded = true;
+}
+
+export async function refreshSpellCheckCatalog() {
+  try {
+    settingsStore.spellCheckCatalog = await invoke<SpellCheckLanguageEntry[]>("spell_check_catalog");
+  } catch {
+    // leave the previous catalog in place
+  }
 }
 
 /** Debounced save, called after any in-place edit to settingsStore.value. */

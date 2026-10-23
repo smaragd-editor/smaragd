@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { dockLayoutRegistry } from "./dockLayoutRegistry.svelte";
 import { showToast } from "./toast.svelte";
+import { settingsStore } from "./settings.svelte";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -61,6 +62,7 @@ let editorRef:
       setDocument: (text: string) => void;
       openFindReplace: () => void;
       gotoLine: (line: number) => void;
+      setMisspellings: (ranges: { from: number; to: number }[]) => void;
     }
   | undefined;
 
@@ -70,7 +72,10 @@ let editorRef:
  * missed whatever `openDocument` call originally populated `documentText`. */
 export function registerEditor(ref: typeof editorRef) {
   editorRef = ref;
-  if (editorRef && project.selectedPath) editorRef.setDocument(project.documentText);
+  if (editorRef && project.selectedPath) {
+    editorRef.setDocument(project.documentText);
+    scheduleSpellCheck();
+  }
 }
 
 export function openFindReplace() {
@@ -121,6 +126,7 @@ export async function openDocument(path: string) {
     project.selectedPath = path;
     editorRef?.setDocument(text);
     schedulePreview();
+    scheduleSpellCheck();
     pushRecentFile(path);
     pushHistory(path);
   } catch (err) {
@@ -189,6 +195,7 @@ export function onEditorChange(text: string) {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDocument, 800);
   schedulePreview();
+  scheduleSpellCheck();
 }
 
 function schedulePreview() {
@@ -198,6 +205,66 @@ function schedulePreview() {
       markdown: project.documentText,
     });
   }, 300);
+}
+
+let spellCheckTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Converts the backend's UTF-8 byte-offset spans (Rust string indexing) to
+ * UTF-16 code-unit offsets (CodeMirror/JS string indexing) — identical for
+ * plain ASCII text, but genuinely different for non-ASCII (this app ships
+ * Norwegian dictionaries; æøå alone would otherwise misplace every
+ * underline after the first one on a line). One pass to build a lookup,
+ * not one `TextEncoder` call per character. */
+function byteSpansToUtf16(text: string, spans: [number, number][]): { from: number; to: number }[] {
+  if (spans.length === 0) return [];
+  const encoder = new TextEncoder();
+  const byteOffsets: number[] = [0];
+  const utf16Offsets: number[] = [0];
+  let byteLen = 0;
+  let utf16Len = 0;
+  for (const ch of text) {
+    byteLen += encoder.encode(ch).length;
+    utf16Len += ch.length;
+    byteOffsets.push(byteLen);
+    utf16Offsets.push(utf16Len);
+  }
+  const toUtf16 = (byteOffset: number): number => {
+    let lo = 0;
+    let hi = byteOffsets.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (byteOffsets[mid] < byteOffset) lo = mid + 1;
+      else hi = mid;
+    }
+    return utf16Offsets[lo];
+  };
+  return spans.map(([start, end]) => ({ from: toUtf16(start), to: toUtf16(end) }));
+}
+
+function scheduleSpellCheck() {
+  clearTimeout(spellCheckTimer);
+  const language = settingsStore.value.spell_check_language;
+  if (language === "Off") {
+    editorRef?.setMisspellings([]);
+    return;
+  }
+  spellCheckTimer = setTimeout(async () => {
+    try {
+      const text = project.documentText;
+      const spans = await invoke<[number, number][]>("spell_check_misspellings", { text, language });
+      editorRef?.setMisspellings(byteSpansToUtf16(text, spans));
+    } catch {
+      // Spell check is a non-essential overlay — leave whatever
+      // decorations were already showing rather than surface an error.
+    }
+  }, 400);
+}
+
+/** Re-runs spell check against the currently open document — called after
+ * the active language changes (SettingsDialog, the toggle shortcut), since
+ * nothing else would otherwise trigger a recompute until the next edit. */
+export function recheckSpelling() {
+  scheduleSpellCheck();
 }
 
 export async function saveDocument() {
@@ -246,6 +313,7 @@ export function closeDocument() {
   project.selectedPath = null;
   project.documentText = "";
   project.previewHtml = "";
+  editorRef?.setMisspellings([]);
 }
 
 /** The folder a shortcut-triggered New File/New Folder should create inside:

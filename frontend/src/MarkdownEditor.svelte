@@ -1,7 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { EditorSelection, EditorState } from "@codemirror/state";
-  import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
+  import { EditorSelection, EditorState, StateEffect, StateField } from "@codemirror/state";
+  import {
+    EditorView,
+    keymap,
+    highlightActiveLine,
+    lineNumbers,
+    Decoration,
+    type DecorationSet,
+  } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
   import { markdown } from "@codemirror/lang-markdown";
   import { languages } from "@codemirror/language-data";
@@ -25,6 +32,27 @@
   let container: HTMLDivElement;
   let view: EditorView | undefined;
 
+  // Spell Check's underline decorations — a plain StateField holding a
+  // DecorationSet, updated via `setMisspellings`' effect rather than
+  // recomputed from a document listener, since the ranges come from an
+  // already-debounced Tauri call (stores/project.svelte.ts), not something
+  // to redo on every keystroke here too.
+  const setMisspellingsEffect = StateEffect.define<{ from: number; to: number }[]>();
+  const misspellingsField = StateField.define<DecorationSet>({
+    create: () => Decoration.none,
+    update(decorations, tr) {
+      for (const effect of tr.effects) {
+        if (effect.is(setMisspellingsEffect)) {
+          return Decoration.set(
+            effect.value.map((r) => Decoration.mark({ class: "cm-misspelled" }).range(r.from, r.to)),
+          );
+        }
+      }
+      return decorations.map(tr.changes);
+    },
+    provide: (field) => EditorView.decorations.from(field),
+  });
+
   onMount(() => {
     const state = EditorState.create({
       doc: value,
@@ -35,6 +63,7 @@
         keymap.of([...defaultKeymap, ...historyKeymap]),
         markdown({ codeLanguages: languages }),
         search(),
+        misspellingsField,
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -68,6 +97,13 @@
   // through rather than two parallel keybinding systems.
   export function openFindReplace() {
     if (view) openSearchPanel(view);
+  }
+
+  // Backs Spell Check — `ranges` are already-converted UTF-16 positions
+  // (stores/project.svelte.ts converts the backend's byte-offset spans).
+  export function setMisspellings(ranges: { from: number; to: number }[]) {
+    if (!view) return;
+    view.dispatch({ effects: setMisspellingsEffect.of(ranges) });
   }
 
   // Backs the Next/Previous Bookmark and Note shortcuts — jumps to a line
@@ -111,5 +147,10 @@
   .editor :global(.cm-activeLineGutter),
   .editor :global(.cm-activeLine) {
     background: var(--color-selected-bg);
+  }
+
+  .editor :global(.cm-misspelled) {
+    text-decoration: underline wavy var(--color-danger);
+    text-decoration-skip-ink: none;
   }
 </style>
