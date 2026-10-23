@@ -71,6 +71,7 @@ export type Settings = {
   double_shift_search_disabled: boolean;
   show_document_stats_in_binder: boolean;
   spell_check_language: SpellCheckLanguage;
+  hide_window_button_bar: boolean;
 };
 
 export type ColorTheme = {
@@ -117,6 +118,7 @@ function defaults(): Settings {
     double_shift_search_disabled: false,
     show_document_stats_in_binder: false,
     spell_check_language: "Off",
+    hide_window_button_bar: false,
   };
 }
 

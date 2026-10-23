@@ -16,6 +16,7 @@
   import { PANEL_TITLES, PANEL_COMPONENTS } from "./panelRegistry";
   import { registerDockLayout, unregisterDockLayout } from "./stores/dockLayoutRegistry.svelte";
   import { themeState } from "./stores/theme.svelte";
+  import { settingsStore } from "./stores/settings.svelte";
 
   const STORAGE_KEY = "smaragd.dock-layout.v1";
 
@@ -249,15 +250,17 @@
 </script>
 
 <div class="dock-shell">
-  <div class="window-menu">
-    <span>Window:</span>
-    {#each panelIds() as id (id)}
-      <button class:open={openIds.has(id)} onclick={() => openPanel(id)}>
-        {PANEL_TITLES[id]}
-      </button>
-    {/each}
-    <button class="reset" onclick={resetLayout}>Reset Layout</button>
-  </div>
+  {#if !settingsStore.value.hide_window_button_bar}
+    <div class="window-menu">
+      <span>Window:</span>
+      {#each panelIds() as id (id)}
+        <button class:open={openIds.has(id)} onclick={() => openPanel(id)}>
+          {PANEL_TITLES[id]}
+        </button>
+      {/each}
+      <button class="reset" onclick={resetLayout}>Reset Layout</button>
+    </div>
+  {/if}
   <div class="dock-container" bind:this={container}></div>
 </div>
 

@@ -154,6 +154,17 @@
             />
             Show lines/words/chars next to each document in the Binder
           </label>
+          <label class="row">
+            <input
+              type="checkbox"
+              checked={!settingsStore.value.hide_window_button_bar}
+              onchange={(e) => {
+                settingsStore.value.hide_window_button_bar = !e.currentTarget.checked;
+                update();
+              }}
+            />
+            Show the Window button bar above the dock
+          </label>
         {:else if active === "Appearance"}
           <label class="row">
             Theme

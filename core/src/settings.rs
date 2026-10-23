@@ -224,6 +224,16 @@ pub struct Settings {
     /// language on toggle-off — see shortcuts.ts's `toggle_spell_check`
     /// handler for that simplification).
     pub spell_check_language: crate::spellcheck::SpellCheckLanguage,
+
+    /// Hides DockLayout.svelte's "Window:" row (one button per panel,
+    /// open/close-toggling it) — a Tauri-port-only convenience with no
+    /// real-app counterpart (the real app's own panel list lives in the
+    /// Window *menu*, not an always-visible bar), so there's no existing
+    /// field name to mirror. `false` (the default) keeps today's behavior
+    /// — named so an absent/old settings file doesn't silently hide it for
+    /// existing users, same "default-false-means-unchanged" convention
+    /// `git_integration_disabled`/`double_shift_search_disabled` already use.
+    pub hide_window_button_bar: bool,
 }
 
 /// `~/.config/smaragd-tauri/smaragd-tauri.toml` on Linux, the platform
