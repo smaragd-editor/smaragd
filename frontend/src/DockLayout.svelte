@@ -183,7 +183,14 @@
   // themes after construction, so this doesn't need to recreate the whole
   // dockview instance on every toggle.
   $effect(() => {
-    api?.updateOptions({ theme: themeState.dark ? themeDark : themeLight });
+    // Read themeState.dark as its own statement, not inside the `api?.`
+    // chain — `a?.b(c)` short-circuits the whole call, c included, when
+    // `a` is nullish, so if this were one expression the effect's first
+    // run (before onMount sets `api`) would never actually read
+    // themeState.dark and Svelte would never register it as a dependency,
+    // leaving every later toggle unable to re-trigger this effect at all.
+    const theme = themeState.dark ? themeDark : themeLight;
+    api?.updateOptions({ theme });
   });
 
   onMount(() => {
