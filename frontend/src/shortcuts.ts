@@ -325,6 +325,12 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
   registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
   registerShortcutHandler("cycle_binder_color_mode", cycleBinderColorMode);
+  registerShortcutHandler("toggle_document_stats", () => {
+    settingsStore.value.show_document_stats_in_binder =
+      !settingsStore.value.show_document_stats_in_binder;
+    settingsStore.value = { ...settingsStore.value };
+    saveSettingsDebounced();
+  });
   registerShortcutHandler("toggle_fullscreen", async () => {
     const win = getCurrentWindow();
     const isFullscreen = await win.isFullscreen();

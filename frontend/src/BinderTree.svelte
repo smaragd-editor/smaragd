@@ -9,6 +9,7 @@
     recordMove,
     cycleBinderColorMode,
   } from "./stores/project.svelte";
+  import { settingsStore } from "./stores/settings.svelte";
 
   const colorModeLabels: Record<string, string> = {
     Off: "Off",
@@ -206,6 +207,9 @@
           <span class="color-dot" style="background: {n.color};"></span>
         {/if}
         {n.name}
+        {#if settingsStore.value.show_document_stats_in_binder && n.stats}
+          <span class="stats">{n.stats.lines}/{n.stats.words}/{n.stats.chars}</span>
+        {/if}
       </button>
       <span class="actions">
         <button title="Rename" onclick={() => rename(n.path, n.name)}>rename</button>
@@ -272,6 +276,14 @@
     height: 0.6rem;
     border-radius: 50%;
     flex-shrink: 0;
+  }
+
+  /* Toggle Document Stats in Binder — "lines/words/chars", same compact
+     format the real app's document_stats_label uses. */
+  .stats {
+    margin-left: 0.4rem;
+    font-size: 0.7rem;
+    color: var(--color-fg-muted);
   }
 
   .doc-row {

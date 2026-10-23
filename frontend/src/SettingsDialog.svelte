@@ -125,6 +125,14 @@
             />
             Ensure Research and Trash folders exist in every project
           </label>
+          <label class="row">
+            <input
+              type="checkbox"
+              bind:checked={settingsStore.value.show_document_stats_in_binder}
+              onchange={update}
+            />
+            Show lines/words/chars next to each document in the Binder
+          </label>
         {:else if active === "Appearance"}
           <label class="row">
             Theme

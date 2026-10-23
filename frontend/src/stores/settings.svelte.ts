@@ -43,6 +43,7 @@ export type Settings = {
   multi_tab_editor: boolean;
   ui_scale: number;
   double_shift_search_disabled: boolean;
+  show_document_stats_in_binder: boolean;
 };
 
 export type ColorTheme = {
@@ -87,6 +88,7 @@ function defaults(): Settings {
     multi_tab_editor: false,
     ui_scale: 0,
     double_shift_search_disabled: false,
+    show_document_stats_in_binder: false,
   };
 }
 

@@ -15,9 +15,17 @@ import { showToast } from "./toast.svelte";
 // binding directly (`state_invalid_export`) since that can't be represented
 // safely across a module boundary — only mutating an exported state value's
 // *properties* is allowed, which this shape gives every field.
+export type DocumentStats = { lines: number; words: number; chars: number };
+
 export type BinderNodeDto =
   | { kind: "Folder"; name: string; path: string; color: string | null; children: BinderNodeDto[] }
-  | { kind: "Document"; name: string; path: string; color: string | null };
+  | {
+      kind: "Document";
+      name: string;
+      path: string;
+      color: string | null;
+      stats: DocumentStats | null;
+    };
 
 export type BinderColorMode = "Off" | "Status" | "Pov" | "WordCountProgress";
 

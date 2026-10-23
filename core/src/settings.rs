@@ -210,6 +210,13 @@ pub struct Settings {
 
     pub ui_scale: f32,
     pub double_shift_search_disabled: bool,
+
+    /// Show each document's `lines/words/chars` (see `frontmatter::
+    /// count_lines`/`count_words`/`count_chars`) next to its Binder row —
+    /// the Tauri port's counterpart of the real app's own identically-named
+    /// field (`app/src/settings.rs`), added once the Binder actually had a
+    /// row to show it on.
+    pub show_document_stats_in_binder: bool,
 }
 
 /// `~/.config/smaragd-tauri/smaragd-tauri.toml` on Linux, the platform

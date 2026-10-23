@@ -22,7 +22,20 @@ pub enum BinderNodeDto {
         name: String,
         path: String,
         color: Option<String>,
+        stats: Option<DocumentStats>,
     },
+}
+
+/// Backs the Toggle Document Stats in Binder shortcut/setting — always
+/// computed (reading each document is already unconditional once a
+/// `WordCountProgress`-shaped read is this cheap; see `build_node_dto`),
+/// left to the frontend's `show_document_stats_in_binder` setting to decide
+/// whether to actually render.
+#[derive(Serialize)]
+pub struct DocumentStats {
+    lines: usize,
+    words: usize,
+    chars: usize,
 }
 
 /// A red→yellow→green gradient toward a target, ported from the real egui
@@ -49,49 +62,28 @@ fn word_count_progress_hex(fraction: f64) -> String {
     )
 }
 
-/// The color a binder row should show under `mode`, if any — see
+/// The color a folder row should show under `mode`, if any — see
 /// `BinderColorMode`'s doc comment for what each non-`Off` mode reads from.
-/// `folder_word_counts` is precomputed once per tree build (not per row)
-/// since it's already a whole-tree walk; a document row under
-/// `WordCountProgress` instead reads+counts just its own file, same as the
-/// real app's per-row cache.
-fn node_color(
+/// A document row's own color is computed separately, by
+/// `document_color_and_stats`, since it shares that function's single file
+/// read rather than doing its own.
+fn folder_color(
     project: &Project,
     mode: BinderColorMode,
-    node: &BinderNode,
+    path: &std::path::Path,
     folder_word_counts: &HashMap<PathBuf, usize>,
 ) -> Option<String> {
-    let is_folder = matches!(node.kind, BinderNodeKind::Folder { .. });
     match mode {
         BinderColorMode::Off => None,
-        BinderColorMode::Status => {
-            let status = if is_folder {
-                project.folder_meta(&node.path).status
-            } else {
-                project.document_meta(&node.path).ok()?.status
-            }?;
-            project.status_color_hex(&status).map(str::to_string)
-        }
-        BinderColorMode::Pov => {
-            let pov = if is_folder {
-                project.folder_meta(&node.path).pov
-            } else {
-                project.document_meta(&node.path).ok()?.pov
-            }?;
-            project.pov_color_hex(&pov).map(str::to_string)
-        }
+        BinderColorMode::Status => project
+            .status_color_hex(&project.folder_meta(path).status?)
+            .map(str::to_string),
+        BinderColorMode::Pov => project
+            .pov_color_hex(&project.folder_meta(path).pov?)
+            .map(str::to_string),
         BinderColorMode::WordCountProgress => {
-            let (count, target) = if is_folder {
-                (
-                    *folder_word_counts.get(&node.path).unwrap_or(&0),
-                    project.folder_meta(&node.path).word_count_target,
-                )
-            } else {
-                let contents = native_store().read_to_string(&node.path).ok()?;
-                let target = smaragd_core::frontmatter::parse(&contents).word_count_target;
-                (smaragd_core::frontmatter::count_words(&contents), target)
-            };
-            let target = target?;
+            let count = *folder_word_counts.get(path).unwrap_or(&0);
+            let target = project.folder_meta(path).word_count_target?;
             if target == 0 {
                 return None;
             }
@@ -100,28 +92,71 @@ fn node_color(
     }
 }
 
+/// A document row's color (if any) and stats (`None` only if the file
+/// couldn't be read), computed from one shared read of its contents rather
+/// than one read per concern.
+fn document_color_and_stats(
+    project: &Project,
+    mode: BinderColorMode,
+    path: &std::path::Path,
+) -> (Option<String>, Option<DocumentStats>) {
+    let Ok(contents) = native_store().read_to_string(path) else {
+        return (None, None);
+    };
+    let meta = smaragd_core::frontmatter::parse(&contents);
+    let color = match mode {
+        BinderColorMode::Off => None,
+        BinderColorMode::Status => meta
+            .status
+            .as_deref()
+            .and_then(|s| project.status_color_hex(s))
+            .map(str::to_string),
+        BinderColorMode::Pov => meta
+            .pov
+            .as_deref()
+            .and_then(|p| project.pov_color_hex(p))
+            .map(str::to_string),
+        BinderColorMode::WordCountProgress => meta.word_count_target.and_then(|target| {
+            if target == 0 {
+                return None;
+            }
+            let words = smaragd_core::frontmatter::count_words(&contents);
+            Some(word_count_progress_hex(words as f64 / target as f64))
+        }),
+    };
+    let stats = Some(DocumentStats {
+        lines: smaragd_core::frontmatter::count_lines(&contents),
+        words: smaragd_core::frontmatter::count_words(&contents),
+        chars: smaragd_core::frontmatter::count_chars(&contents),
+    });
+    (color, stats)
+}
+
 fn build_node_dto(
     project: &Project,
     mode: BinderColorMode,
     node: &BinderNode,
     folder_word_counts: &HashMap<PathBuf, usize>,
 ) -> BinderNodeDto {
-    let color = node_color(project, mode, node, folder_word_counts);
     match &node.kind {
         BinderNodeKind::Folder { children } => BinderNodeDto::Folder {
             name: node.name.clone(),
             path: node.path.display().to_string(),
-            color,
+            color: folder_color(project, mode, &node.path, folder_word_counts),
             children: children
                 .iter()
                 .map(|child| build_node_dto(project, mode, child, folder_word_counts))
                 .collect(),
         },
-        BinderNodeKind::Document => BinderNodeDto::Document {
-            name: node.name.clone(),
-            path: node.path.display().to_string(),
-            color,
-        },
+        BinderNodeKind::Document => {
+            let (color, stats) = document_color_and_stats(project, mode, &node.path);
+            BinderNodeDto::Document {
+                name: node.name.clone(),
+                path: node.path.display().to_string(),
+                color,
+                stats,
+            }
+        }
     }
 }
 
