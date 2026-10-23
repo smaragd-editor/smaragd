@@ -3,6 +3,7 @@
   import {
     createDockview,
     themeLight,
+    themeDark,
     type DockviewApi,
     type IContentRenderer,
   } from "dockview-core";
@@ -14,6 +15,7 @@
   import StubPanel from "./panels/StubPanel.svelte";
   import { PANEL_TITLES, PANEL_COMPONENTS } from "./panelRegistry";
   import { registerDockLayout, unregisterDockLayout } from "./stores/dockLayoutRegistry.svelte";
+  import { themeState } from "./stores/theme.svelte";
 
   const STORAGE_KEY = "smaragd.dock-layout.v1";
 
@@ -172,9 +174,21 @@
     persist();
   }
 
+  // Dockview renders its own chrome (tab bars, and critically each panel's
+  // content-area background) via its own `--dv-*` CSS variables, which this
+  // app's `--color-*` ones never touch — toggling dark mode without this
+  // left every panel's content area a stark white, with only the text
+  // inside it (which follows `--color-fg` directly) picking up the new
+  // colors. `api.updateOptions` is dockview-core's documented way to swap
+  // themes after construction, so this doesn't need to recreate the whole
+  // dockview instance on every toggle.
+  $effect(() => {
+    api?.updateOptions({ theme: themeState.dark ? themeDark : themeLight });
+  });
+
   onMount(() => {
     api = createDockview(container, {
-      theme: themeLight,
+      theme: themeState.dark ? themeDark : themeLight,
       createComponent: (options) => svelteContentRenderer(options.name),
     });
     api.onDidLayoutChange(() => persist());

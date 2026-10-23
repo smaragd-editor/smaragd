@@ -1,5 +1,14 @@
 import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
 
+// Reactive mirror of resolvedIsDark() — DockLayout.svelte reads this to pick
+// dockview-core's own themeDark/themeLight preset (dockview renders its
+// chrome, including each panel's content-area background, via its own
+// `--dv-*` CSS variables, which this app's `--color-*` ones never touch; a
+// panel's own content past that background already follows `--color-fg`
+// correctly, which is why toggling dark mode previously looked like "text
+// recolored, background didn't" rather than nothing happening at all).
+export const themeState = $state<{ dark: boolean }>({ dark: false });
+
 // Applies settingsStore's theme_preference/color_theme to the page, as CSS
 // custom properties on :root — the approach core::color_theme.rs's own doc
 // comment calls for (a ColorTheme is just 4 portable hex colors, not an
@@ -27,6 +36,7 @@ export function applyTheme() {
     if (theme_preference === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", theme_preference);
   }
+  themeState.dark = resolvedIsDark();
 }
 
 function resolvedIsDark(): boolean {
@@ -51,4 +61,16 @@ export function toggleDarkMode() {
   settingsStore.value = { ...settingsStore.value };
   saveSettingsDebounced();
   applyTheme();
+}
+
+// With theme_preference "system" and no named color_theme, the CSS vars
+// already follow the OS live via @media (prefers-color-scheme: dark) with
+// no JS involved — but themeState.dark (above) is a one-shot read, so it
+// needs its own listener to stay in sync for the same case.
+if (typeof window !== "undefined") {
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if (settingsStore.value.theme_preference === "system" && !settingsStore.value.color_theme) {
+      applyTheme();
+    }
+  });
 }
