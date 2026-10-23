@@ -4,6 +4,7 @@ mod manuscript;
 mod panels;
 mod pomodoro;
 mod project;
+mod project_settings;
 mod settings;
 mod spellcheck;
 mod story_cards;
@@ -45,6 +46,14 @@ pub fn run() {
             project::binder_move_before,
             project::open_daily_note,
             project::cycle_binder_color_mode,
+            project::set_binder_color_mode,
+            project_settings::project_settings,
+            project_settings::set_project_daily_notes,
+            project_settings::set_folder_role,
+            project_settings::set_status_color,
+            project_settings::clear_status_color,
+            project_settings::set_pov_color,
+            project_settings::clear_pov_color,
             story_cards::story_cards_list,
             story_cards::story_card_upsert,
             story_cards::story_card_delete,

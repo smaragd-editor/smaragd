@@ -472,3 +472,21 @@ pub fn cycle_binder_color_mode(root: String) -> Result<BinderColorModeResult, St
         tree: build_tree(&project),
     })
 }
+
+/// The Project Settings dialog's Binder tab — same shape as
+/// `cycle_binder_color_mode` but setting a specific mode directly (a radio
+/// button, not a cycle-through-them-all button).
+#[tauri::command]
+pub fn set_binder_color_mode(
+    root: String,
+    mode: BinderColorMode,
+) -> Result<BinderColorModeResult, String> {
+    let mut project = load(&root)?;
+    project
+        .set_binder_color_mode(mode)
+        .map_err(|e| e.to_string())?;
+    Ok(BinderColorModeResult {
+        binder_color_mode: mode,
+        tree: build_tree(&project),
+    })
+}

@@ -41,6 +41,14 @@
   // debounce rather than the real app's explicit-save/dirty-tab model, so
   // there's no meaningful "unsaved changes" state to guard beyond that.
   //
+  // Project Settings (ProjectSettingsDialog.svelte) covers Binder color
+  // mode, Daily Notes, Folder Roles, and Status/POV colors — a bounded
+  // subset of the real app's 5-category panel; Git auto-commit config, the
+  // Sync "also sync non-text files" toggle, Attachments destination, and
+  // the Daily Notes template picker aren't wired, each its own chunk of
+  // core methods with no existing command either, same shape as what is
+  // here, just not done yet.
+  //
   // Open Document now opens the same quick-switcher as Search Everywhere —
   // this port's Search Everywhere was already scoped down to document-title
   // search only (see SearchEverywhere.svelte's own comment), so it already
@@ -207,7 +215,7 @@
         { label: "Settings…", action: () => (showSettings = true) },
         {
           label: "Project Settings…",
-          action: () => notImplemented("Project Settings"),
+          action: () => (showProjectSettings = true),
           disabled: !hasProject,
         },
         { separator: true },
@@ -340,6 +348,7 @@
   }
 
   let showSettings = $state(false);
+  let showProjectSettings = $state(false);
   let showAbout = $state(false);
   let showCommandPrompt = $state(false);
   let showSearchEverywhere = $state(false);
@@ -353,6 +362,9 @@
     registerShortcutHandler("open_project", pickAndOpenProject);
     registerShortcutHandler("close_project", closeProject);
     registerShortcutHandler("open_settings", () => (showSettings = true));
+    registerShortcutHandler("open_project_settings", () => {
+      if (project.value) showProjectSettings = true;
+    });
     registerShortcutHandler("find_replace", openFindReplace);
     registerShortcutHandler("command_prompt", () => (showCommandPrompt = true));
     registerShortcutHandler("search_everywhere", () => (showSearchEverywhere = true));
@@ -426,6 +438,12 @@
 {#if showSettings}
   {#await import("./SettingsDialog.svelte") then { default: SettingsDialog }}
     <SettingsDialog onClose={() => (showSettings = false)} />
+  {/await}
+{/if}
+
+{#if showProjectSettings}
+  {#await import("./ProjectSettingsDialog.svelte") then { default: ProjectSettingsDialog }}
+    <ProjectSettingsDialog onClose={() => (showProjectSettings = false)} />
   {/await}
 {/if}
 
