@@ -388,6 +388,16 @@ pub fn binder_restore(
     }
 }
 
+/// Permanently removes everything currently inside the designated Trash
+/// folder — the Binder context menu's "Empty Trash" item, shown only on a
+/// folder currently holding the Trash role.
+#[tauri::command]
+pub fn empty_trash(root: String) -> Result<BinderNodeDto, String> {
+    let mut project = load(&root)?;
+    project.empty_trash().map_err(|e| e.to_string())?;
+    Ok(build_tree(&project))
+}
+
 #[tauri::command]
 pub fn binder_move(
     root: String,

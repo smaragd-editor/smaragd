@@ -2,14 +2,17 @@
   import { invoke } from "@tauri-apps/api/core";
   import {
     type BinderNodeDto,
+    type FolderRole,
     project,
     openDocument,
     onTreeChange,
     recordRename,
     recordMove,
     cycleBinderColorMode,
+    restorePath,
   } from "./stores/project.svelte";
   import { settingsStore } from "./stores/settings.svelte";
+  import { showToast } from "./stores/toast.svelte";
 
   const colorModeLabels: Record<string, string> = {
     Off: "Off",
@@ -17,6 +20,8 @@
     Pov: "POV",
     WordCountProgress: "Word Count",
   };
+
+  const FOLDER_ROLES: FolderRole[] = ["Research", "Trash", "Templates", "Manuscript", "World"];
 
   // Phase 4: the real Binder, replacing Phase 2's read-only recursive list —
   // create/rename/delete and drag-and-drop move/reorder, all round-tripping
@@ -156,6 +161,58 @@
       recordMove(dragged, result.path);
     }
   }
+
+  // Right-click context menu — matches the real egui app's folder/document
+  // menus (app/src/ui/binder_panel.rs), minus New From Template, Export…,
+  // and Dropdown Source: template picking, per-folder export, and picklist-
+  // source folders aren't built in this port yet, same scope cut as
+  // everywhere else. The existing hover-revealed buttons above are kept as
+  // they are rather than replaced by this — a touch device has no
+  // right-click/contextmenu event at all, so they're still the only way in
+  // on mobile.
+  type ContextMenuState = { x: number; y: number; node: BinderNodeDto; isRoot: boolean };
+  let contextMenu = $state<ContextMenuState | null>(null);
+  let contextMenuRole = $state<FolderRole | null>(null);
+  let contextMenuTrashed = $state(false);
+
+  async function openContextMenu(e: MouseEvent, n: BinderNodeDto) {
+    e.preventDefault();
+    e.stopPropagation();
+    const isRoot = n.path === root;
+    contextMenu = { x: e.clientX, y: e.clientY, node: n, isRoot };
+    contextMenuRole = null;
+    contextMenuTrashed = false;
+    if (isRoot) return;
+    if (n.kind === "Folder") {
+      contextMenuRole = await invoke<FolderRole | null>("folder_role", { root, path: n.path });
+    }
+    contextMenuTrashed = await invoke<boolean>("is_trashed", { root, path: n.path });
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
+  }
+
+  async function setRole(path: string, role: FolderRole | null) {
+    try {
+      await invoke("set_folder_role", { root, path, role });
+    } catch (err) {
+      showToast(String(err));
+    } finally {
+      closeContextMenu();
+    }
+  }
+
+  async function doEmptyTrash() {
+    try {
+      const newTree = await invoke<BinderNodeDto>("empty_trash", { root });
+      onTreeChange(newTree);
+    } catch (err) {
+      showToast(String(err));
+    } finally {
+      closeContextMenu();
+    }
+  }
 </script>
 
 {#snippet node(n: BinderNodeDto)}
@@ -168,6 +225,7 @@
         ondragover={(e) => onDragOver(e, n.path)}
         ondragleave={() => onDragLeave(n.path)}
         ondrop={(e) => onDropOnFolder(e, n.path)}
+        oncontextmenu={(e) => openContextMenu(e, n)}
       >
         {#if n.color}
           <span class="color-dot" style="background: {n.color};"></span>
@@ -202,6 +260,7 @@
         draggable="true"
         ondragstart={(e) => onDragStart(e, n.path)}
         onclick={() => openDocument(n.path)}
+        oncontextmenu={(e) => openContextMenu(e, n)}
       >
         {#if n.color}
           <span class="color-dot" style="background: {n.color};"></span>
@@ -229,6 +288,113 @@
   {@render node(tree)}
   {#if error}<p class="error">{error}</p>{/if}
 </nav>
+
+<svelte:window onkeydown={(e) => contextMenu && e.key === "Escape" && closeContextMenu()} />
+
+{#if contextMenu}
+  {@const menuNode = contextMenu.node}
+  <div
+    class="menu-backdrop"
+    onclick={closeContextMenu}
+    oncontextmenu={(e) => {
+      e.preventDefault();
+      closeContextMenu();
+    }}
+    role="presentation"
+  ></div>
+  <div class="context-menu" style="left: {contextMenu.x}px; top: {contextMenu.y}px;">
+    {#if menuNode.kind === "Folder"}
+      <button
+        onclick={() => {
+          newDocument(menuNode.path);
+          closeContextMenu();
+        }}
+      >
+        New Document
+      </button>
+      <button
+        onclick={() => {
+          newFolder(menuNode.path);
+          closeContextMenu();
+        }}
+      >
+        New Folder
+      </button>
+      {#if !contextMenu.isRoot}
+        <div class="menu-separator"></div>
+        <button
+          onclick={() => {
+            rename(menuNode.path, menuNode.name);
+            closeContextMenu();
+          }}
+        >
+          Rename
+        </button>
+        <button
+          onclick={() => {
+            remove(menuNode.path, menuNode.name);
+            closeContextMenu();
+          }}
+        >
+          Delete
+        </button>
+        {#if contextMenuTrashed}
+          <button
+            onclick={() => {
+              restorePath(menuNode.path);
+              closeContextMenu();
+            }}
+          >
+            Restore
+          </button>
+        {/if}
+        <div class="menu-separator"></div>
+        <div class="menu-label">Folder Role</div>
+        {#each FOLDER_ROLES as role (role)}
+          <button class="menu-radio" onclick={() => setRole(menuNode.path, role)}>
+            <span class="radio-dot" class:checked={contextMenuRole === role}></span>
+            {role}
+          </button>
+        {/each}
+        <button class="menu-radio" onclick={() => setRole(menuNode.path, null)}>
+          <span class="radio-dot" class:checked={contextMenuRole === null}></span>
+          None
+        </button>
+        {#if contextMenuRole === "Trash"}
+          <div class="menu-separator"></div>
+          <button onclick={doEmptyTrash}>Empty Trash</button>
+        {/if}
+      {/if}
+    {:else}
+      <button
+        onclick={() => {
+          rename(menuNode.path, menuNode.name);
+          closeContextMenu();
+        }}
+      >
+        Rename
+      </button>
+      <button
+        onclick={() => {
+          remove(menuNode.path, menuNode.name);
+          closeContextMenu();
+        }}
+      >
+        Delete
+      </button>
+      {#if contextMenuTrashed}
+        <button
+          onclick={() => {
+            restorePath(menuNode.path);
+            closeContextMenu();
+          }}
+        >
+          Restore
+        </button>
+      {/if}
+    {/if}
+  </div>
+{/if}
 
 <style>
   .toolbar {
@@ -341,5 +507,72 @@
 
   .error {
     color: var(--color-danger);
+  }
+
+  .menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+  }
+
+  .context-menu {
+    position: fixed;
+    z-index: 1001;
+    min-width: 11rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    padding: 0.25rem 0;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+  }
+
+  .context-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 0.3rem 0.75rem;
+    cursor: pointer;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  .context-menu button:hover {
+    background: var(--color-selected-bg);
+  }
+
+  .menu-separator {
+    height: 1px;
+    background: var(--color-border);
+    margin: 0.25rem 0;
+  }
+
+  .menu-label {
+    padding: 0.2rem 0.75rem;
+    color: var(--color-fg-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+
+  .menu-radio {
+    padding-left: 1.1rem;
+  }
+
+  .radio-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    border: 1px solid var(--color-fg-muted);
+    flex-shrink: 0;
+  }
+
+  .radio-dot.checked {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
   }
 </style>

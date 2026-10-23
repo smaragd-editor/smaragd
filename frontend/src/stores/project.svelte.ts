@@ -30,6 +30,8 @@ export type BinderNodeDto =
 
 export type BinderColorMode = "Off" | "Status" | "Pov" | "WordCountProgress";
 
+export type FolderRole = "Research" | "Trash" | "Templates" | "Manuscript" | "World";
+
 export type ProjectSummary = {
   root: string;
   book_title: string | null;
@@ -398,7 +400,7 @@ export async function deleteSelection() {
   }
 }
 
-async function restorePath(path: string, recreate = false) {
+export async function restorePath(path: string, recreate = false) {
   if (!project.value) return;
   try {
     const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_restore", {

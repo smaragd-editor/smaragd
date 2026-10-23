@@ -100,6 +100,26 @@ pub fn set_folder_role(root: String, path: String, role: Option<FolderRole>) -> 
         .map_err(|e| e.to_string())
 }
 
+/// The Binder's right-click context menu reads this to pre-select the
+/// current role in its "Folder Role" submenu — `project_settings`'s bulk
+/// `folder_roles` list exists for the dialog, but opening the context menu
+/// for one folder shouldn't need a whole-project round trip just to know
+/// that folder's own role.
+#[tauri::command]
+pub fn folder_role(root: String, path: String) -> Result<Option<FolderRole>, String> {
+    let project = load(&root)?;
+    Ok(project.folder_role(Path::new(&path)))
+}
+
+/// Whether `path` is a top-level trashed item (see `Project::trashed_origin`)
+/// — the Binder's context menu shows "Restore" only then, same as the real
+/// app's own menu.
+#[tauri::command]
+pub fn is_trashed(root: String, path: String) -> Result<bool, String> {
+    let project = load(&root)?;
+    Ok(project.trashed_origin(Path::new(&path)).is_some())
+}
+
 #[tauri::command]
 pub fn set_status_color(root: String, status: String, hex: String) -> Result<(), String> {
     let mut project = load(&root)?;

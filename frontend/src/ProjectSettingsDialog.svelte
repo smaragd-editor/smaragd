@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { project, onTreeChange } from "./stores/project.svelte";
-  import type { BinderColorMode, BinderNodeDto } from "./stores/project.svelte";
+  import type { BinderColorMode, BinderNodeDto, FolderRole } from "./stores/project.svelte";
   import { showToast } from "./stores/toast.svelte";
 
   // A bounded subset of the real egui app's 5-category Project Settings
@@ -17,7 +17,6 @@
   const categories: Category[] = ["Binder", "DailyNotes", "FolderRoles", "Colors"];
   let active = $state<Category>("Binder");
 
-  type FolderRole = "Research" | "Trash" | "Templates" | "Manuscript" | "World";
   type FolderRoleEntry = { path: string; role: FolderRole };
   type ProjectSettings = {
     binder_color_mode: BinderColorMode;
