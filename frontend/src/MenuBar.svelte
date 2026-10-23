@@ -3,7 +3,13 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
-  import { project, closeProject, openProject, openFindReplace } from "./stores/project.svelte";
+  import {
+    project,
+    closeProject,
+    openProject,
+    createProject,
+    openFindReplace,
+  } from "./stores/project.svelte";
   import AboutDialog from "./AboutDialog.svelte";
   import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
   import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
@@ -20,16 +26,20 @@
   // notImplemented() placeholders until this pass, listed for structural
   // fidelity first and wired for real once a user asked for them.
   //
-  // Still genuinely stubbed, deliberately: New Project, Recent Projects
-  // (project-lifecycle UI beyond a folder picker, out of this pass's
-  // scope), Project Settings (a whole second dialog, not built), Exit (no
-  // Tauri equivalent wired), Focus Mode / Toggle Spell Check (features that
-  // don't exist in this build), and Reload Plugins/Enable Project Plugins —
-  // that one is different in kind, not just unfinished: there is no plugin
-  // engine anywhere in this Tauri port (no Rhai scripting, no :command
-  // registration), so there's nothing to reload. It's left as a clear "no
-  // plugin engine in this build" message rather than faked as if a real
-  // action were just missing its wiring.
+  // Still genuinely stubbed, deliberately: Recent Projects (a whole
+  // submenu UI, out of this pass's scope) and Reload Plugins/Enable
+  // Project Plugins — that one is different in kind, not just unfinished:
+  // there is no plugin engine anywhere in this Tauri port (no Rhai
+  // scripting, no :command registration), so there's nothing to reload.
+  // It's left as a clear "no plugin engine in this build" message rather
+  // than faked as if a real action were just missing its wiring.
+  //
+  // New Project prompts for a name then reuses the same folder picker Open
+  // Project does, rather than a dedicated creation wizard. Exit flushes any
+  // pending autosave (see `flushBeforeExit`) then closes the window — no
+  // confirm-before-close modal, since this port autosaves on an 800ms
+  // debounce rather than the real app's explicit-save/dirty-tab model, so
+  // there's no meaningful "unsaved changes" state to guard beyond that.
   //
   // Open Document now opens the same quick-switcher as Search Everywhere —
   // this port's Search Everywhere was already scoped down to document-title
@@ -92,6 +102,20 @@
   async function pickAndOpenProject() {
     const selected = await openFileDialog({ directory: true, multiple: false });
     if (typeof selected === "string") await openProject(selected);
+  }
+
+  // A name prompt + a parent-folder picker, joined with "/" — plain string
+  // concatenation rather than a path-joining helper, since there isn't one
+  // in scope on the frontend side; `Path::new` on the Rust side accepts "/"
+  // on every platform Tauri targets, so this is safe despite not being a
+  // "real" path-join.
+  async function pickAndCreateProject() {
+    const name = window.prompt("New project name:");
+    if (!name) return;
+    const parent = await openFileDialog({ directory: true, multiple: false });
+    if (typeof parent !== "string") return;
+    await createProject(`${parent}/${name}`);
+    if (project.openError) showToast(`Couldn't create project: ${project.openError}`);
   }
 
   async function pickAndImport(format: "docx" | "epub" | "pdf") {
@@ -162,7 +186,7 @@
       id: "file",
       label: "File",
       items: () => [
-        { label: "New Project…", action: () => notImplemented("New Project") },
+        { label: "New Project…", action: pickAndCreateProject },
         { label: "Open Project…", action: pickAndOpenProject },
         { label: "Recent Projects", action: () => notImplemented("Recent Projects") },
         { label: "Close Project", action: closeProject, disabled: !hasProject },
@@ -187,7 +211,7 @@
           disabled: !hasProject,
         },
         { separator: true },
-        { label: "Exit", action: () => notImplemented("Exit") },
+        { label: "Exit", action: () => runShortcutAction("exit") },
       ],
     },
     {
@@ -325,6 +349,7 @@
   let gitCommitAndPush = $state(false);
 
   onMount(() => {
+    registerShortcutHandler("new_project", pickAndCreateProject);
     registerShortcutHandler("open_project", pickAndOpenProject);
     registerShortcutHandler("close_project", closeProject);
     registerShortcutHandler("open_settings", () => (showSettings = true));

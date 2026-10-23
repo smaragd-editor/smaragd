@@ -90,6 +90,19 @@ export async function openProject(root: string) {
   }
 }
 
+export async function createProject(root: string) {
+  project.openError = null;
+  project.value = null;
+  project.selectedPath = null;
+  project.documentText = "";
+  project.previewHtml = "";
+  try {
+    project.value = await invoke<ProjectSummary>("project_create", { root });
+  } catch (err) {
+    project.openError = String(err);
+  }
+}
+
 export async function closeProject() {
   await invoke("project_close");
   project.value = null;
@@ -207,6 +220,20 @@ function flushPendingSave() {
     clearTimeout(saveTimer);
     saveTimer = undefined;
     saveDocument();
+  }
+}
+
+/** Backs the Exit shortcut — awaits the save rather than firing it off like
+ * `flushPendingSave` does, so the window doesn't close mid-write. This
+ * port's autosave (an 800ms debounce after every keystroke, not an
+ * explicit-save/dirty-tab model) makes the real app's whole "unsaved
+ * changes?" confirm-on-exit modal unnecessary: the realistic gap is just
+ * whatever's still sitting in that debounce, which this closes. */
+export async function flushBeforeExit() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    await saveDocument();
   }
 }
 

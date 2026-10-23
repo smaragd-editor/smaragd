@@ -6,7 +6,7 @@ use smaragd_core::project::Project;
 use smaragd_core::project::RestoreError;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
 use smaragd_core::project::store::NativeStore;
-use smaragd_core::project::{BinderColorMode, store::native_store};
+use smaragd_core::project::{BinderColorMode, FolderRole, store::native_store};
 use smaragd_core::settings::Settings;
 
 #[derive(Serialize)]
@@ -191,13 +191,49 @@ fn project_summary(project: &Project) -> ProjectSummary {
     }
 }
 
+fn global_settings() -> Settings {
+    smaragd_core::settings::config_file_path()
+        .map(|path| Settings::load_from_path(&NativeStore, &path))
+        .unwrap_or_default()
+}
+
+/// Create the Research/Trash role folders if `Settings::create_starter_folders`
+/// is on and they don't already exist — `ensure_role_folder` is itself
+/// idempotent, so this is safe to call on every open, not just creation,
+/// matching the real app's own `ensure_starter_folders` (which the Tauri
+/// port's `project_open` never called until now — a pre-existing gap: the
+/// Settings checkbox persisted but had no effect).
+fn ensure_starter_folders(project: &mut Project) -> Result<(), String> {
+    if !global_settings().create_starter_folders {
+        return Ok(());
+    }
+    project
+        .ensure_role_folder(FolderRole::Research, "Research")
+        .map_err(|e| e.to_string())?;
+    project
+        .ensure_role_folder(FolderRole::Trash, "Trash")
+        .map_err(|e| e.to_string())?;
+    project.rescan();
+    Ok(())
+}
+
 /// Open (or re-open) a project at `root` and return its binder tree. Stateless
 /// for now — each call re-scans from disk — which is fine at Phase 2 scope; a
 /// held-in-memory `Project` (via `tauri::State`) is a later refinement once the
 /// editor/autosave work (Phase 3) actually needs one.
 #[tauri::command]
 pub fn project_open(root: String) -> Result<ProjectSummary, String> {
-    let project = Project::load_from_folder(Path::new(&root)).map_err(|e| e.to_string())?;
+    let mut project = Project::load_from_folder(Path::new(&root)).map_err(|e| e.to_string())?;
+    ensure_starter_folders(&mut project)?;
+    Ok(project_summary(&project))
+}
+
+/// Create a brand-new project at `root` (an empty or not-yet-existing
+/// folder) and return its binder tree, same shape as `project_open`.
+#[tauri::command]
+pub fn project_create(root: String) -> Result<ProjectSummary, String> {
+    let mut project = Project::initialize(Path::new(&root)).map_err(|e| e.to_string())?;
+    ensure_starter_folders(&mut project)?;
     Ok(project_summary(&project))
 }
 
@@ -402,9 +438,7 @@ pub fn open_daily_note(root: String) -> Result<DailyNoteResult, String> {
     if !project.daily_notes_enabled() {
         return Err("Daily Notes is off — enable it in Project Settings > Daily Notes".to_string());
     }
-    let settings = smaragd_core::settings::config_file_path()
-        .map(|path| Settings::load_from_path(&NativeStore, &path))
-        .unwrap_or_default();
+    let settings = global_settings();
     let (path, cursor) = project
         .open_or_create_daily_note(
             &settings.template_date_format,

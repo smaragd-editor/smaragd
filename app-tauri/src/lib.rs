@@ -28,6 +28,7 @@ pub fn run() {
             pomodoro::pomodoro_pause,
             pomodoro::pomodoro_skip,
             project::project_open,
+            project::project_create,
             project::project_close,
             project::project_binder_tree,
             project::document_read,

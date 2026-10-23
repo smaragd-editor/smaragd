@@ -25,6 +25,7 @@ import {
   cycleBinderColorMode,
   goBackDocument,
   goForwardDocument,
+  flushBeforeExit,
 } from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
@@ -334,6 +335,10 @@ export function installBuiltinShortcutHandlers() {
       !settingsStore.value.show_document_stats_in_binder;
     settingsStore.value = { ...settingsStore.value };
     saveSettingsDebounced();
+  });
+  registerShortcutHandler("exit", async () => {
+    await flushBeforeExit();
+    await getCurrentWindow().close();
   });
   registerShortcutHandler("toggle_fullscreen", async () => {
     const win = getCurrentWindow();
