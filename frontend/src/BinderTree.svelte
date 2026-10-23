@@ -521,18 +521,45 @@
     overflow: auto;
   }
 
+  /* Vertical guide line per nesting level, matching the real egui binder's
+     own indent lines — a single continuous border on the child <ul> rather
+     than one per <li>, so it doesn't break at every sibling gap. */
   .tree ul {
     list-style: none;
     margin: 0;
-    padding-left: 1rem;
+    padding-left: 0.85rem;
+    border-left: 1px solid var(--color-border);
   }
 
+  /* The native <details>/<summary> disclosure triangle varies by browser/
+     platform (and some renderers hide it entirely) — replaced with an
+     explicit ▶/▼ matching the real app's own triangle exactly, same glyph
+     swapped on open rather than a CSS rotate, simplest thing that reads
+     the same both states. */
   summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     cursor: pointer;
+    list-style: none;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary::before {
+    content: "▶";
+    display: inline-block;
+    width: 1em;
+    flex-shrink: 0;
+    font-size: 0.7em;
+    color: var(--color-fg-muted);
+  }
+
+  details[open] > summary::before {
+    content: "▼";
   }
 
   /* Binder Color Mode (Off/Status/POV/Word Count) — a small swatch rather
