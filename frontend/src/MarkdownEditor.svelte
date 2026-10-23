@@ -91,8 +91,25 @@
     text-align: left;
   }
 
+  /* No CodeMirror theme extension is loaded, so by default its gutter/
+     active-line colors stay hardcoded light regardless of the app's own
+     dark mode — overridden here via its stable default class names rather
+     than pulling in a full EditorView.theme() for just this. */
   .editor :global(.cm-editor) {
     height: 100%;
     font-size: 0.95rem;
+    background: transparent;
+    color: var(--color-fg);
+  }
+
+  .editor :global(.cm-gutters) {
+    background: var(--color-bg-alt);
+    color: var(--color-fg-muted);
+    border-right: 1px solid var(--color-border);
+  }
+
+  .editor :global(.cm-activeLineGutter),
+  .editor :global(.cm-activeLine) {
+    background: var(--color-selected-bg);
   }
 </style>

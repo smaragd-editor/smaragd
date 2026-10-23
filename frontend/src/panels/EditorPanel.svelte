@@ -77,7 +77,7 @@
 
   .empty {
     padding: 1rem;
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .reading {
@@ -89,7 +89,7 @@
 
   .inline-backlinks {
     flex: 0 0 auto;
-    border-top: 1px solid #ccc;
+    border-top: 1px solid var(--color-border);
     padding: 0.5rem 0.75rem;
     max-height: 30%;
     overflow: auto;
@@ -99,7 +99,7 @@
   .inline-backlinks h4 {
     margin: 0 0 0.3rem;
     font-size: 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .inline-backlinks ul {

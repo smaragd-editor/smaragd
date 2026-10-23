@@ -43,7 +43,7 @@
 
   .modal {
     width: 320px;
-    background: white;
+    background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     padding: 1.5rem;
@@ -56,7 +56,7 @@
 
   .note {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .footer {

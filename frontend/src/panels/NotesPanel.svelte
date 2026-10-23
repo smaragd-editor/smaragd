@@ -77,7 +77,7 @@
 
   li {
     padding: 0.3rem 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .goto {
@@ -95,10 +95,10 @@
   }
 
   .empty {
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

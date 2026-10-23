@@ -209,7 +209,7 @@
 
 <style>
   .tree {
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     padding: 0.5rem;
     overflow: auto;
   }
@@ -245,11 +245,11 @@
   }
 
   .doc-row .doc.selected {
-    background: #eef;
+    background: var(--color-selected-bg);
   }
 
   .drag-over {
-    outline: 2px dashed #557;
+    outline: 2px dashed var(--color-accent);
   }
 
   .actions {
@@ -282,6 +282,6 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

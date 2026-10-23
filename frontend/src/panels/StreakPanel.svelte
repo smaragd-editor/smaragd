@@ -56,18 +56,18 @@
   }
 
   .status.green {
-    color: #2e7d32;
+    color: var(--color-success);
   }
 
   .status.yellow {
-    color: #b8860b;
+    color: var(--color-warning);
   }
 
   .status.red {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

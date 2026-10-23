@@ -80,10 +80,10 @@
   }
 
   .empty {
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

@@ -111,7 +111,7 @@
 
   .card {
     width: 14rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     border-radius: 4px;
     padding: 0.5rem;
     display: flex;
@@ -128,7 +128,7 @@
     display: flex;
     flex-direction: column;
     font-size: 0.75rem;
-    color: #666;
+    color: var(--color-fg-muted);
     gap: 0.15rem;
   }
 
@@ -143,6 +143,6 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

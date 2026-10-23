@@ -201,11 +201,11 @@
   }
 
   .ok {
-    color: #2e7d32;
+    color: var(--color-success);
   }
 
   .warn {
-    color: #b8860b;
+    color: var(--color-warning);
   }
 
   textarea {
@@ -215,6 +215,6 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

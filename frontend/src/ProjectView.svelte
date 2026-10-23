@@ -100,7 +100,7 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .mobile-toolbar {
@@ -109,7 +109,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--color-border);
     font-size: 0.85rem;
   }
 
@@ -127,10 +127,10 @@
   .dock-host {
     flex: 1;
     min-height: 30rem;
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

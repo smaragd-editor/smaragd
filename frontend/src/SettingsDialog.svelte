@@ -2,6 +2,7 @@
   import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, SHORTCUT_CATEGORIES, effectiveCombo, setShortcut } from "./shortcuts";
   import type { KeyCombo } from "./stores/settings.svelte";
+  import { applyTheme } from "./stores/theme.svelte";
 
   // Settings dialog matching the real egui app's 9-category structure
   // (app/src/ui/settings_panel.rs) — General, Appearance, Editor,
@@ -42,6 +43,7 @@
   function update() {
     settingsStore.value = { ...settingsStore.value };
     saveSettingsDebounced();
+    applyTheme();
   }
 
   function keydown(e: KeyboardEvent) {
@@ -384,7 +386,7 @@
     max-width: 95vw;
     height: 520px;
     max-height: 90vh;
-    background: white;
+    background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -399,7 +401,7 @@
 
   .categories {
     width: 160px;
-    border-right: 1px solid #ddd;
+    border-right: 1px solid var(--color-border);
     display: flex;
     flex-direction: column;
     padding: 0.5rem 0;
@@ -416,7 +418,7 @@
   }
 
   .categories button.active {
-    background: #557;
+    background: var(--color-accent);
     color: white;
   }
 
@@ -446,12 +448,12 @@
   h4 {
     margin: 0.5rem 0 0;
     font-size: 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .note {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
     font-style: italic;
   }
 
@@ -465,11 +467,11 @@
   td {
     text-align: left;
     padding: 0.2rem 0.4rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .muted {
-    color: #999;
+    color: var(--color-fg-muted);
   }
 
   .actions {
@@ -482,7 +484,7 @@
   }
 
   .footer {
-    border-top: 1px solid #ddd;
+    border-top: 1px solid var(--color-border);
     padding: 0.5rem 1rem;
     display: flex;
     justify-content: flex-end;

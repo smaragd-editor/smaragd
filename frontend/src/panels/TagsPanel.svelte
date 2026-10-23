@@ -88,7 +88,7 @@
   }
 
   .tag-list button.selected {
-    background: #eef;
+    background: var(--color-selected-bg);
   }
 
   .documents {
@@ -96,10 +96,10 @@
   }
 
   .empty {
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

@@ -25,6 +25,6 @@
 
   .empty {
     padding: 1rem;
-    color: #888;
+    color: var(--color-fg-muted);
   }
 </style>

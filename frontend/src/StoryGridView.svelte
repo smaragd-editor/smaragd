@@ -98,7 +98,7 @@
 
   th,
   td {
-    border: 1px solid #ccc;
+    border: 1px solid var(--color-border);
     padding: 0.3rem 0.5rem;
     text-align: left;
   }
@@ -122,6 +122,6 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

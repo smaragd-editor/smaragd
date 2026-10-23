@@ -218,7 +218,7 @@
     align-items: center;
     gap: 0.3rem;
     padding: 0.3rem 0.5rem;
-    border-bottom: 1px solid #ccc;
+    border-bottom: 1px solid var(--color-border);
     font-size: 0.8rem;
   }
 
@@ -228,7 +228,7 @@
   }
 
   .window-menu button.open {
-    background: #557;
+    background: var(--color-accent);
     color: white;
   }
 

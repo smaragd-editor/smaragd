@@ -99,7 +99,7 @@
     width: 32rem;
     max-width: 90vw;
     max-height: 60vh;
-    background: white;
+    background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     display: flex;
@@ -110,7 +110,7 @@
   input {
     padding: 0.6rem 0.8rem;
     border: none;
-    border-bottom: 1px solid #ddd;
+    border-bottom: 1px solid var(--color-border);
     font-size: 0.95rem;
   }
 
@@ -137,12 +137,12 @@
   }
 
   button.selected {
-    background: #eef;
+    background: var(--color-selected-bg);
   }
 
   .empty {
     padding: 0.5rem 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
     font-size: 0.85rem;
   }
 </style>

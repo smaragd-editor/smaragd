@@ -63,7 +63,7 @@
   }
 
   dt {
-    color: #888;
+    color: var(--color-fg-muted);
     font-size: 0.85rem;
   }
 
@@ -73,6 +73,6 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

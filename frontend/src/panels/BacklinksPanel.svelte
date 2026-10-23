@@ -70,15 +70,15 @@
 
   .snippet {
     margin: 0.15rem 0 0;
-    color: #666;
+    color: var(--color-fg-muted);
     font-size: 0.85rem;
   }
 
   .empty {
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

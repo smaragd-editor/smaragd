@@ -65,7 +65,7 @@
 
   h3 {
     font-size: 0.85rem;
-    color: #888;
+    color: var(--color-fg-muted);
     margin: 0.75rem 0 0.25rem;
   }
 
@@ -88,15 +88,15 @@
   }
 
   .meta {
-    color: #888;
+    color: var(--color-fg-muted);
     font-size: 0.75rem;
   }
 
   .empty {
-    color: #888;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

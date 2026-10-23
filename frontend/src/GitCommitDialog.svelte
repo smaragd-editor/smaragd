@@ -80,7 +80,7 @@
 
   .modal {
     width: 28rem;
-    background: white;
+    background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     padding: 1.5rem;
@@ -107,7 +107,7 @@
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
     font-size: 0.8rem;
   }
 </style>

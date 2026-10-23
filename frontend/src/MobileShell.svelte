@@ -84,8 +84,8 @@
     flex-wrap: wrap;
     gap: 0.3rem;
     padding: 0.5rem;
-    background: white;
-    border-top: 1px solid #ccc;
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-border);
     box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
   }
 
@@ -95,7 +95,7 @@
 
   .tab-bar {
     display: flex;
-    border-top: 1px solid #ccc;
+    border-top: 1px solid var(--color-border);
     /* iOS home indicator / Android gesture bar safe area. */
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
@@ -111,7 +111,7 @@
 
   .tab-bar button.active,
   .more-sheet button.active {
-    background: #557;
+    background: var(--color-accent);
     color: white;
   }
 </style>

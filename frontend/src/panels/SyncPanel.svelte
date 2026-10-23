@@ -112,7 +112,7 @@
 
   .note {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--color-fg-muted);
     margin: 0;
   }
 
@@ -130,10 +130,10 @@
     margin: 0;
     padding: 0;
     font-size: 0.85rem;
-    color: #666;
+    color: var(--color-fg-muted);
   }
 
   .error {
-    color: #c0392b;
+    color: var(--color-danger);
   }
 </style>

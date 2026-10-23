@@ -21,7 +21,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
-    color: #888;
+    color: var(--color-fg-muted);
     box-sizing: border-box;
   }
 

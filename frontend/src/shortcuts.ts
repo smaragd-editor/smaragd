@@ -8,6 +8,7 @@ import { notImplemented } from "./stores/toast.svelte";
 import { zoomInPreview, zoomOutPreview, resetPreviewZoom } from "./stores/previewZoom.svelte";
 import { toggleEditorViewMode } from "./stores/editorViewMode.svelte";
 import { toggleInlineBacklinks } from "./stores/inlineBacklinks.svelte";
+import { toggleDarkMode } from "./stores/theme.svelte";
 import {
   project,
   saveDocument,
@@ -321,6 +322,7 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("preview_zoom_reset", resetPreviewZoom);
   registerShortcutHandler("toggle_editor_view_mode", toggleEditorViewMode);
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
+  registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
   registerShortcutHandler("toggle_fullscreen", async () => {
     const win = getCurrentWindow();
     const isFullscreen = await win.isFullscreen();

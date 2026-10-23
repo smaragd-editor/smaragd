@@ -9,6 +9,7 @@
   import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction, registerShortcutHandler } from "./shortcuts";
   import { notImplemented, showToast } from "./stores/toast.svelte";
+  import { applyTheme } from "./stores/theme.svelte";
 
   // Desktop menu bar matching the real egui app's 8-menu structure
   // (app/src/app/menu_bar.rs) as closely as this port's actual
@@ -301,6 +302,7 @@
     settingsStore.value.color_theme = id;
     settingsStore.value = { ...settingsStore.value };
     saveSettingsDebounced();
+    applyTheme();
   }
 
   let showSettings = $state(false);
@@ -420,8 +422,8 @@
 <style>
   .menu-bar {
     display: flex;
-    background: #f3f3f3;
-    border-bottom: 1px solid #ccc;
+    background: var(--color-bg-alt);
+    border-bottom: 1px solid var(--color-border);
     font-size: 0.85rem;
     user-select: none;
     position: relative;
@@ -440,7 +442,7 @@
   }
 
   .menu-label.open {
-    background: #557;
+    background: var(--color-accent);
     color: white;
   }
 
@@ -449,8 +451,8 @@
     top: 100%;
     left: 0;
     min-width: 16rem;
-    background: white;
-    border: 1px solid #ccc;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
     display: flex;
     flex-direction: column;
@@ -472,22 +474,22 @@
   }
 
   .item:hover:not(:disabled) {
-    background: #eef;
+    background: var(--color-selected-bg);
   }
 
   .item:disabled {
-    color: #aaa;
+    color: var(--color-fg-muted);
     cursor: default;
   }
 
   .shortcut {
-    color: #888;
+    color: var(--color-fg-muted);
     font-size: 0.75rem;
   }
 
   .separator {
     height: 1px;
-    background: #ddd;
+    background: var(--color-border);
     margin: 0.25rem 0.5rem;
   }
 </style>

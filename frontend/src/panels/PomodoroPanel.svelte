@@ -80,7 +80,7 @@
   .phase {
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #888;
+    color: var(--color-fg-muted);
     margin: 0;
   }
 
