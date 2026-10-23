@@ -42,6 +42,7 @@ pub fn run() {
             project::binder_move,
             project::binder_move_before,
             project::open_daily_note,
+            project::cycle_binder_color_mode,
             story_cards::story_cards_list,
             story_cards::story_card_upsert,
             story_cards::story_card_delete,

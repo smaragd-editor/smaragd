@@ -16,12 +16,15 @@ import { showToast } from "./toast.svelte";
 // safely across a module boundary — only mutating an exported state value's
 // *properties* is allowed, which this shape gives every field.
 export type BinderNodeDto =
-  | { kind: "Folder"; name: string; path: string; children: BinderNodeDto[] }
-  | { kind: "Document"; name: string; path: string };
+  | { kind: "Folder"; name: string; path: string; color: string | null; children: BinderNodeDto[] }
+  | { kind: "Document"; name: string; path: string; color: string | null };
+
+export type BinderColorMode = "Off" | "Status" | "Pov" | "WordCountProgress";
 
 export type ProjectSummary = {
   root: string;
   book_title: string | null;
+  binder_color_mode: BinderColorMode;
   tree: BinderNodeDto;
 };
 
@@ -364,6 +367,21 @@ export async function cycleNote(direction: 1 | -1) {
           : notes.length - 1
         : (current + direction + notes.length) % notes.length;
     await gotoDocumentLine(notes[next].path, notes[next].line);
+  } catch (err) {
+    showToast(String(err));
+  }
+}
+
+export async function cycleBinderColorMode() {
+  if (!project.value) return;
+  try {
+    const result = await invoke<{ binder_color_mode: BinderColorMode; tree: BinderNodeDto }>(
+      "cycle_binder_color_mode",
+      { root: project.value.root },
+    );
+    project.value.binder_color_mode = result.binder_color_mode;
+    onTreeChange(result.tree);
+    showToast(`Binder color: ${result.binder_color_mode}`);
   } catch (err) {
     showToast(String(err));
   }

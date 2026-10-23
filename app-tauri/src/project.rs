@@ -1,10 +1,12 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use smaragd_core::project::Project;
 use smaragd_core::project::RestoreError;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
 use smaragd_core::project::store::NativeStore;
+use smaragd_core::project::{BinderColorMode, store::native_store};
 use smaragd_core::settings::Settings;
 
 #[derive(Serialize)]
@@ -13,44 +15,144 @@ pub enum BinderNodeDto {
     Folder {
         name: String,
         path: String,
+        color: Option<String>,
         children: Vec<BinderNodeDto>,
     },
     Document {
         name: String,
         path: String,
+        color: Option<String>,
     },
 }
 
-impl From<&BinderNode> for BinderNodeDto {
-    fn from(node: &BinderNode) -> Self {
-        match &node.kind {
-            BinderNodeKind::Folder { children } => BinderNodeDto::Folder {
-                name: node.name.clone(),
-                path: node.path.display().to_string(),
-                children: children.iter().map(BinderNodeDto::from).collect(),
-            },
-            BinderNodeKind::Document => BinderNodeDto::Document {
-                name: node.name.clone(),
-                path: node.path.display().to_string(),
-            },
+/// A red→yellow→green gradient toward a target, ported from the real egui
+/// app's `color_theme::word_count_progress_color` (RGB stops `(200,60,60)`→
+/// `(230,180,30)`→`(60,180,75)`, each half of `[0,1]` lerped independently) —
+/// trivial enough to duplicate here rather than add an egui-free wrapper
+/// around it in core for a single caller.
+fn word_count_progress_hex(fraction: f64) -> String {
+    const RED: (f64, f64, f64) = (200.0, 60.0, 60.0);
+    const YELLOW: (f64, f64, f64) = (230.0, 180.0, 30.0);
+    const GREEN: (f64, f64, f64) = (60.0, 180.0, 75.0);
+    let f = fraction.clamp(0.0, 1.0);
+    let (a, b, t) = if f < 0.5 {
+        (RED, YELLOW, f / 0.5)
+    } else {
+        (YELLOW, GREEN, (f - 0.5) / 0.5)
+    };
+    let lerp = |x: f64, y: f64| (x + (y - x) * t).round() as u8;
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        lerp(a.0, b.0),
+        lerp(a.1, b.1),
+        lerp(a.2, b.2)
+    )
+}
+
+/// The color a binder row should show under `mode`, if any — see
+/// `BinderColorMode`'s doc comment for what each non-`Off` mode reads from.
+/// `folder_word_counts` is precomputed once per tree build (not per row)
+/// since it's already a whole-tree walk; a document row under
+/// `WordCountProgress` instead reads+counts just its own file, same as the
+/// real app's per-row cache.
+fn node_color(
+    project: &Project,
+    mode: BinderColorMode,
+    node: &BinderNode,
+    folder_word_counts: &HashMap<PathBuf, usize>,
+) -> Option<String> {
+    let is_folder = matches!(node.kind, BinderNodeKind::Folder { .. });
+    match mode {
+        BinderColorMode::Off => None,
+        BinderColorMode::Status => {
+            let status = if is_folder {
+                project.folder_meta(&node.path).status
+            } else {
+                project.document_meta(&node.path).ok()?.status
+            }?;
+            project.status_color_hex(&status).map(str::to_string)
+        }
+        BinderColorMode::Pov => {
+            let pov = if is_folder {
+                project.folder_meta(&node.path).pov
+            } else {
+                project.document_meta(&node.path).ok()?.pov
+            }?;
+            project.pov_color_hex(&pov).map(str::to_string)
+        }
+        BinderColorMode::WordCountProgress => {
+            let (count, target) = if is_folder {
+                (
+                    *folder_word_counts.get(&node.path).unwrap_or(&0),
+                    project.folder_meta(&node.path).word_count_target,
+                )
+            } else {
+                let contents = native_store().read_to_string(&node.path).ok()?;
+                let target = smaragd_core::frontmatter::parse(&contents).word_count_target;
+                (smaragd_core::frontmatter::count_words(&contents), target)
+            };
+            let target = target?;
+            if target == 0 {
+                return None;
+            }
+            Some(word_count_progress_hex(count as f64 / target as f64))
         }
     }
+}
+
+fn build_node_dto(
+    project: &Project,
+    mode: BinderColorMode,
+    node: &BinderNode,
+    folder_word_counts: &HashMap<PathBuf, usize>,
+) -> BinderNodeDto {
+    let color = node_color(project, mode, node, folder_word_counts);
+    match &node.kind {
+        BinderNodeKind::Folder { children } => BinderNodeDto::Folder {
+            name: node.name.clone(),
+            path: node.path.display().to_string(),
+            color,
+            children: children
+                .iter()
+                .map(|child| build_node_dto(project, mode, child, folder_word_counts))
+                .collect(),
+        },
+        BinderNodeKind::Document => BinderNodeDto::Document {
+            name: node.name.clone(),
+            path: node.path.display().to_string(),
+            color,
+        },
+    }
+}
+
+/// Builds the binder tree DTO under the project's current
+/// `binder_color_mode` — the single entry point every command below uses
+/// instead of walking `project.tree.root` directly, so a row's color always
+/// matches whatever mode is active without each call site re-deriving it.
+fn build_tree(project: &Project) -> BinderNodeDto {
+    let mode = project.meta.binder_color_mode;
+    let folder_word_counts = if mode == BinderColorMode::WordCountProgress {
+        project.folder_word_counts()
+    } else {
+        HashMap::new()
+    };
+    build_node_dto(project, mode, &project.tree.root, &folder_word_counts)
 }
 
 #[derive(Serialize)]
 pub struct ProjectSummary {
     root: String,
     book_title: Option<String>,
+    binder_color_mode: BinderColorMode,
     tree: BinderNodeDto,
 }
 
-impl From<&Project> for ProjectSummary {
-    fn from(project: &Project) -> Self {
-        ProjectSummary {
-            root: project.root.display().to_string(),
-            book_title: project.meta.book_title.clone(),
-            tree: BinderNodeDto::from(&project.tree.root),
-        }
+fn project_summary(project: &Project) -> ProjectSummary {
+    ProjectSummary {
+        root: project.root.display().to_string(),
+        book_title: project.meta.book_title.clone(),
+        binder_color_mode: project.meta.binder_color_mode,
+        tree: build_tree(project),
     }
 }
 
@@ -61,7 +163,7 @@ impl From<&Project> for ProjectSummary {
 #[tauri::command]
 pub fn project_open(root: String) -> Result<ProjectSummary, String> {
     let project = Project::load_from_folder(Path::new(&root)).map_err(|e| e.to_string())?;
-    Ok(ProjectSummary::from(&project))
+    Ok(project_summary(&project))
 }
 
 /// No held state to release yet (see `project_open`'s doc comment) — kept as a
@@ -75,7 +177,7 @@ pub fn project_close() -> Result<(), String> {
 #[tauri::command]
 pub fn project_binder_tree(root: String) -> Result<BinderNodeDto, String> {
     let project = Project::load_from_folder(Path::new(&root)).map_err(|e| e.to_string())?;
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(build_tree(&project))
 }
 
 #[tauri::command]
@@ -135,7 +237,7 @@ pub fn binder_create_document(
         .map_err(|e| e.to_string())?;
     project.rescan();
     Ok(CreateResult {
-        tree: BinderNodeDto::from(&project.tree.root),
+        tree: build_tree(&project),
         path: path.display().to_string(),
     })
 }
@@ -151,7 +253,7 @@ pub fn binder_create_folder(
         .create_folder(Path::new(&parent), &name)
         .map_err(|e| e.to_string())?;
     project.rescan();
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(build_tree(&project))
 }
 
 #[tauri::command]
@@ -166,7 +268,7 @@ pub fn binder_rename(
         .map_err(|e| e.to_string())?;
     project.rescan();
     Ok(BinderOpResult {
-        tree: BinderNodeDto::from(&project.tree.root),
+        tree: build_tree(&project),
         path: dest.display().to_string(),
     })
 }
@@ -187,7 +289,7 @@ pub fn binder_delete(root: String, path: String) -> Result<BinderNodeDto, String
         .delete(Path::new(&path))
         .map_err(|e| e.to_string())?;
     project.rescan();
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(build_tree(&project))
 }
 
 /// Restore a trashed item to the folder it was deleted from. `recreate`
@@ -205,7 +307,7 @@ pub fn binder_restore(
     let mut project = load(&root)?;
     match project.restore_from_trash(Path::new(&path), recreate) {
         Ok(dest) => Ok(BinderOpResult {
-            tree: BinderNodeDto::from(&project.tree.root),
+            tree: build_tree(&project),
             path: dest.display().to_string(),
         }),
         Err(RestoreError::OriginalFolderMissing(folder)) => {
@@ -227,7 +329,7 @@ pub fn binder_move(
         .map_err(|e| e.to_string())?;
     project.rescan();
     Ok(BinderOpResult {
-        tree: BinderNodeDto::from(&project.tree.root),
+        tree: build_tree(&project),
         path: dest.display().to_string(),
     })
 }
@@ -244,7 +346,7 @@ pub fn binder_move_before(
         .map_err(|e| e.to_string())?;
     project.rescan();
     Ok(BinderOpResult {
-        tree: BinderNodeDto::from(&project.tree.root),
+        tree: build_tree(&project),
         path: dest.display().to_string(),
     })
 }
@@ -277,5 +379,27 @@ pub fn open_daily_note(root: String) -> Result<DailyNoteResult, String> {
     Ok(DailyNoteResult {
         path: path.display().to_string(),
         cursor,
+    })
+}
+
+#[derive(Serialize)]
+pub struct BinderColorModeResult {
+    binder_color_mode: BinderColorMode,
+    tree: BinderNodeDto,
+}
+
+/// Advance the binder's row-coloring mode to the next one in
+/// `BinderColorMode::next`'s cycle (Off → Status → Pov → WordCountProgress →
+/// Off) and return the tree recolored under it.
+#[tauri::command]
+pub fn cycle_binder_color_mode(root: String) -> Result<BinderColorModeResult, String> {
+    let mut project = load(&root)?;
+    let next = project.meta.binder_color_mode.next();
+    project
+        .set_binder_color_mode(next)
+        .map_err(|e| e.to_string())?;
+    Ok(BinderColorModeResult {
+        binder_color_mode: next,
+        tree: build_tree(&project),
     })
 }

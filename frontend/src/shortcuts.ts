@@ -22,6 +22,7 @@ import {
   cycleBookmark,
   cycleNote,
   openDailyNote,
+  cycleBinderColorMode,
 } from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
@@ -323,6 +324,7 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_editor_view_mode", toggleEditorViewMode);
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
   registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
+  registerShortcutHandler("cycle_binder_color_mode", cycleBinderColorMode);
   registerShortcutHandler("toggle_fullscreen", async () => {
     const win = getCurrentWindow();
     const isFullscreen = await win.isFullscreen();

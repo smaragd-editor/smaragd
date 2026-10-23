@@ -7,7 +7,15 @@
     onTreeChange,
     recordRename,
     recordMove,
+    cycleBinderColorMode,
   } from "./stores/project.svelte";
+
+  const colorModeLabels: Record<string, string> = {
+    Off: "Off",
+    Status: "Status",
+    Pov: "POV",
+    WordCountProgress: "Word Count",
+  };
 
   // Phase 4: the real Binder, replacing Phase 2's read-only recursive list —
   // create/rename/delete and drag-and-drop move/reorder, all round-tripping
@@ -160,6 +168,9 @@
         ondragleave={() => onDragLeave(n.path)}
         ondrop={(e) => onDropOnFolder(e, n.path)}
       >
+        {#if n.color}
+          <span class="color-dot" style="background: {n.color};"></span>
+        {/if}
         <span class="name">{n.name}</span>
         <span class="actions">
           <button title="New document" onclick={() => newDocument(n.path)}>+file</button>
@@ -191,6 +202,9 @@
         ondragstart={(e) => onDragStart(e, n.path)}
         onclick={() => openDocument(n.path)}
       >
+        {#if n.color}
+          <span class="color-dot" style="background: {n.color};"></span>
+        {/if}
         {n.name}
       </button>
       <span class="actions">
@@ -202,12 +216,33 @@
   {/if}
 {/snippet}
 
+<div class="toolbar">
+  <button title="Cycle binder color mode" onclick={cycleBinderColorMode}>
+    Color: {colorModeLabels[project.value?.binder_color_mode ?? "Off"]}
+  </button>
+</div>
 <nav class="tree">
   {@render node(tree)}
   {#if error}<p class="error">{error}</p>{/if}
 </nav>
 
 <style>
+  .toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .toolbar button {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem;
+    cursor: pointer;
+    color: inherit;
+  }
+
   .tree {
     border: 1px solid var(--color-border);
     padding: 0.5rem;
@@ -226,6 +261,17 @@
     justify-content: space-between;
     gap: 0.5rem;
     cursor: pointer;
+  }
+
+  /* Binder Color Mode (Off/Status/POV/Word Count) — a small swatch rather
+     than a full-row background, so an arbitrary user-assigned hex color
+     never has to also work as a text-contrast background in both themes. */
+  .color-dot {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    flex-shrink: 0;
   }
 
   .doc-row {
