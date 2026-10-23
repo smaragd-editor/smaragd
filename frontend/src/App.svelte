@@ -6,6 +6,7 @@
   import { loadSettings } from "./stores/settings.svelte";
   import { toast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
+  import { focusMode } from "./stores/focusMode.svelte";
   import { handleGlobalKeydown, installBuiltinShortcutHandlers } from "./shortcuts";
 
   // Menu bar + global keyboard shortcuts are desktop-only — mobile already
@@ -20,7 +21,7 @@
 </script>
 
 <main>
-  {#if !viewport.isMobile}
+  {#if !viewport.isMobile && !focusMode.active}
     <MenuBar />
   {/if}
   <div class="body">

@@ -138,6 +138,28 @@
     persist();
   }
 
+  // Toggle Focus Mode — snapshot the current layout, clear down to just the
+  // Editor, and restore the snapshot on exit. Same toJSON()/clear()/fromJSON()
+  // calls `resetLayout`/`loadSavedLayout` already use, not a new dockview-core
+  // capability. Doesn't maximize the OS window the way the real app's own
+  // Focus Mode does (`ViewportCommand::Maximized`) — a platform-level nicety
+  // orthogonal to the dock layout itself, left out of this pass.
+  let preFocusLayout: unknown;
+
+  export function enterFocusMode() {
+    if (!api || preFocusLayout !== undefined) return;
+    preFocusLayout = api.toJSON();
+    api.clear();
+    api.addPanel({ id: "editor", component: "editor", title: PANEL_TITLES.editor });
+  }
+
+  export function exitFocusMode() {
+    if (!api || preFocusLayout === undefined) return;
+    api.fromJSON(preFocusLayout as Parameters<DockviewApi["fromJSON"]>[0]);
+    preFocusLayout = undefined;
+    persist();
+  }
+
   onMount(() => {
     api = createDockview(container, {
       theme: themeLight,
@@ -182,6 +204,8 @@
       listSavedLayouts,
       saveCurrentLayoutAs,
       loadSavedLayout,
+      enterFocusMode,
+      exitFocusMode,
     });
   });
 

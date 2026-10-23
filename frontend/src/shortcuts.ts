@@ -9,6 +9,7 @@ import { zoomInPreview, zoomOutPreview, resetPreviewZoom } from "./stores/previe
 import { toggleEditorViewMode } from "./stores/editorViewMode.svelte";
 import { toggleInlineBacklinks } from "./stores/inlineBacklinks.svelte";
 import { toggleDarkMode } from "./stores/theme.svelte";
+import { toggleFocusMode } from "./stores/focusMode.svelte";
 import {
   project,
   saveDocument,
@@ -327,6 +328,7 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_editor_view_mode", toggleEditorViewMode);
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
   registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
+  registerShortcutHandler("toggle_focus_mode", toggleFocusMode);
   registerShortcutHandler("cycle_binder_color_mode", cycleBinderColorMode);
   registerShortcutHandler("go_back", goBackDocument);
   registerShortcutHandler("go_forward", goForwardDocument);

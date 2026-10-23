@@ -11,6 +11,8 @@ type DockLayoutApi = {
   listSavedLayouts: () => string[];
   saveCurrentLayoutAs: (name: string) => void;
   loadSavedLayout: (name: string) => void;
+  enterFocusMode: () => void;
+  exitFocusMode: () => void;
 };
 
 export const dockLayoutRegistry = $state<{ api: DockLayoutApi | null }>({ api: null });
