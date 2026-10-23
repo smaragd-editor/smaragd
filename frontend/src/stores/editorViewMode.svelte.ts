@@ -6,3 +6,7 @@ export const editorViewMode = $state<{ mode: "source" | "reading" }>({ mode: "so
 export function toggleEditorViewMode() {
   editorViewMode.mode = editorViewMode.mode === "source" ? "reading" : "source";
 }
+
+export function setEditorViewMode(mode: "source" | "reading") {
+  editorViewMode.mode = mode;
+}

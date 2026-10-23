@@ -408,6 +408,29 @@ export async function renameSelection() {
   }
 }
 
+/** Backs the Editor pane's ☰ menu's "Move file to…" — same prompt-based
+ * folder-path move BinderTree.svelte's own "Move" button uses, just acting
+ * on the currently open document rather than an explicit path. */
+export async function moveSelectionTo() {
+  if (!project.value || !project.selectedPath) return;
+  const path = project.selectedPath;
+  const name = path.split("/").pop()!.replace(/\.md$/, "");
+  const destination = window.prompt(`Move "${name}" to (absolute folder path):`, project.value.root);
+  if (!destination) return;
+  try {
+    const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_move", {
+      root: project.value.root,
+      path,
+      newParent: destination,
+    });
+    recordMove(path, result.path);
+    onTreeChange(result.tree);
+    project.selectedPath = result.path;
+  } catch (err) {
+    showToast(`Couldn't move: ${err}`);
+  }
+}
+
 export async function deleteSelection() {
   if (!project.value || !project.selectedPath) return;
   const path = project.selectedPath;

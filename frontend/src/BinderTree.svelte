@@ -324,6 +324,7 @@
       <button
         class="doc"
         class:selected={project.selectedPath === n.path}
+        data-binder-path={n.path}
         draggable="true"
         ondragstart={(e) => onDragStart(e, n.path)}
         onclick={() => openDocument(n.path)}
