@@ -1,8 +1,27 @@
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { KeyCombo } from "./stores/settings.svelte";
 import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
 import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
+import { wordCountRegistry } from "./stores/wordCountRegistry.svelte";
 import { notImplemented } from "./stores/toast.svelte";
-import { project, saveDocument } from "./stores/project.svelte";
+import { zoomInPreview, zoomOutPreview, resetPreviewZoom } from "./stores/previewZoom.svelte";
+import { toggleEditorViewMode } from "./stores/editorViewMode.svelte";
+import { toggleInlineBacklinks } from "./stores/inlineBacklinks.svelte";
+import {
+  project,
+  saveDocument,
+  closeDocument,
+  newDocumentAtSelection,
+  newFolderAtSelection,
+  renameSelection,
+  deleteSelection,
+  restoreSelection,
+  undoLastStructuralOp,
+  cycleBookmark,
+  cycleNote,
+  openDailyNote,
+} from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
 // 63 variants) — same action ids/labels/categories/default bindings, kept
@@ -280,4 +299,40 @@ export function installBuiltinShortcutHandlers() {
     registerShortcutHandler(actionId, () => dockLayoutRegistry.api?.openPanel(panelId));
   }
   registerShortcutHandler("save", () => saveDocument());
+  registerShortcutHandler("close_document", closeDocument);
+  registerShortcutHandler("new_file", newDocumentAtSelection);
+  registerShortcutHandler("new_folder", newFolderAtSelection);
+  registerShortcutHandler("rename", renameSelection);
+  registerShortcutHandler("delete", deleteSelection);
+  registerShortcutHandler("restore", restoreSelection);
+  registerShortcutHandler("undo_last_move", undoLastStructuralOp);
+  registerShortcutHandler("next_bookmark", () => cycleBookmark(1));
+  registerShortcutHandler("previous_bookmark", () => cycleBookmark(-1));
+  registerShortcutHandler("next_note", () => cycleNote(1));
+  registerShortcutHandler("previous_note", () => cycleNote(-1));
+  registerShortcutHandler("open_daily_note", openDailyNote);
+  registerShortcutHandler("sync_now", () => invoke("sync_demo_now"));
+  registerShortcutHandler("refresh_word_count", () => {
+    if (wordCountRegistry.api) wordCountRegistry.api.refresh();
+    else dockLayoutRegistry.api?.openPanel("wordcount");
+  });
+  registerShortcutHandler("preview_zoom_in", zoomInPreview);
+  registerShortcutHandler("preview_zoom_out", zoomOutPreview);
+  registerShortcutHandler("preview_zoom_reset", resetPreviewZoom);
+  registerShortcutHandler("toggle_editor_view_mode", toggleEditorViewMode);
+  registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
+  registerShortcutHandler("toggle_fullscreen", async () => {
+    const win = getCurrentWindow();
+    const isFullscreen = await win.isFullscreen();
+    await win.setFullscreen(!isFullscreen);
+  });
+
+  // No true "which dock panel has focus" query exists (dockLayoutRegistry
+  // only exposes openPanel) — approximated as alternating which of the two
+  // it last asked for, rather than a real focus check.
+  let binderFocused = false;
+  registerShortcutHandler("toggle_binder_focus", () => {
+    binderFocused = !binderFocused;
+    dockLayoutRegistry.api?.openPanel(binderFocused ? "binder" : "editor");
+  });
 }

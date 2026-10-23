@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { project } from "../stores/project.svelte";
+  import { registerWordCount, unregisterWordCount } from "../stores/wordCountRegistry.svelte";
 
   type WordCount = {
     manuscript_only: number;
@@ -14,7 +15,11 @@
   let counts = $state<WordCount | null>(null);
   let error = $state<string | null>(null);
 
-  onMount(refresh);
+  onMount(() => {
+    refresh();
+    registerWordCount({ refresh });
+  });
+  onDestroy(unregisterWordCount);
 
   async function refresh() {
     try {

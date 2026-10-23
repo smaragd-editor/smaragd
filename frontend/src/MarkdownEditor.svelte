@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { EditorState } from "@codemirror/state";
+  import { EditorSelection, EditorState } from "@codemirror/state";
   import { EditorView, keymap, highlightActiveLine, lineNumbers } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
   import { markdown } from "@codemirror/lang-markdown";
@@ -68,6 +68,16 @@
   // through rather than two parallel keybinding systems.
   export function openFindReplace() {
     if (view) openSearchPanel(view);
+  }
+
+  // Backs the Next/Previous Bookmark and Note shortcuts — jumps to a line
+  // without needing the caller to know anything about CodeMirror positions.
+  export function gotoLine(line: number) {
+    if (!view) return;
+    const clamped = Math.min(Math.max(line, 1), view.state.doc.lines);
+    const { from } = view.state.doc.line(clamped);
+    view.dispatch({ selection: EditorSelection.cursor(from), scrollIntoView: true });
+    view.focus();
   }
 </script>
 

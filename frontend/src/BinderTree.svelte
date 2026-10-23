@@ -5,6 +5,8 @@
     project,
     openDocument,
     onTreeChange,
+    recordRename,
+    recordMove,
   } from "./stores/project.svelte";
 
   // Phase 4: the real Binder, replacing Phase 2's read-only recursive list —
@@ -65,10 +67,13 @@
   async function rename(path: string, currentName: string) {
     const newName = window.prompt("Rename to:", currentName);
     if (!newName || newName === currentName) return;
-    const newTree = await run(
-      invoke<BinderNodeDto>("binder_rename", { root, path, newName }),
+    const result = await run(
+      invoke<{ tree: BinderNodeDto; path: string }>("binder_rename", { root, path, newName }),
     );
-    if (newTree) onTreeChange(newTree);
+    if (result) {
+      onTreeChange(result.tree);
+      recordRename(path, result.path);
+    }
   }
 
   async function remove(path: string, name: string) {
@@ -88,10 +93,13 @@
   async function moveTo(path: string, name: string) {
     const destination = window.prompt(`Move "${name}" to (absolute folder path):`, root);
     if (!destination) return;
-    const newTree = await run(
-      invoke<BinderNodeDto>("binder_move", { root, path, newParent: destination }),
+    const result = await run(
+      invoke<{ tree: BinderNodeDto; path: string }>("binder_move", { root, path, newParent: destination }),
     );
-    if (newTree) onTreeChange(newTree);
+    if (result) {
+      onTreeChange(result.tree);
+      recordMove(path, result.path);
+    }
   }
 
   function onDragStart(e: DragEvent, path: string) {
@@ -113,10 +121,13 @@
     dragOverPath = null;
     const dragged = e.dataTransfer?.getData("text/plain");
     if (!dragged || dragged === folderPath) return;
-    const newTree = await run(
-      invoke<BinderNodeDto>("binder_move", { root, path: dragged, newParent: folderPath }),
+    const result = await run(
+      invoke<{ tree: BinderNodeDto; path: string }>("binder_move", { root, path: dragged, newParent: folderPath }),
     );
-    if (newTree) onTreeChange(newTree);
+    if (result) {
+      onTreeChange(result.tree);
+      recordMove(dragged, result.path);
+    }
   }
 
   async function onDropOnDocument(e: DragEvent, beforePath: string) {
@@ -124,10 +135,17 @@
     dragOverPath = null;
     const dragged = e.dataTransfer?.getData("text/plain");
     if (!dragged || dragged === beforePath) return;
-    const newTree = await run(
-      invoke<BinderNodeDto>("binder_move_before", { root, path: dragged, before: beforePath }),
+    const result = await run(
+      invoke<{ tree: BinderNodeDto; path: string }>("binder_move_before", {
+        root,
+        path: dragged,
+        before: beforePath,
+      }),
     );
-    if (newTree) onTreeChange(newTree);
+    if (result) {
+      onTreeChange(result.tree);
+      recordMove(dragged, result.path);
+    }
   }
 </script>
 

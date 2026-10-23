@@ -312,6 +312,9 @@
   let gitCommitAndPush = $state(false);
 
   onMount(() => {
+    registerShortcutHandler("open_project", pickAndOpenProject);
+    registerShortcutHandler("close_project", closeProject);
+    registerShortcutHandler("open_settings", () => (showSettings = true));
     registerShortcutHandler("find_replace", openFindReplace);
     registerShortcutHandler("command_prompt", () => (showCommandPrompt = true));
     registerShortcutHandler("search_everywhere", () => (showSearchEverywhere = true));

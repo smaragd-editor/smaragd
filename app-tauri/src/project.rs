@@ -2,7 +2,10 @@ use std::path::Path;
 
 use serde::Serialize;
 use smaragd_core::project::Project;
+use smaragd_core::project::RestoreError;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
+use smaragd_core::project::store::NativeStore;
+use smaragd_core::settings::Settings;
 
 #[derive(Serialize)]
 #[serde(tag = "kind")]
@@ -100,6 +103,17 @@ pub struct CreateResult {
     path: String,
 }
 
+/// Shared shape for `binder_rename`/`binder_move`/`binder_move_before` — each
+/// moves or renames exactly one item and, unlike `binder_delete`, needs to
+/// report back exactly where that item ended up (so callers like the undo-
+/// last-move shortcut can act on it without guessing the extension/collision
+/// rules `Project::rename`/`move_item` apply internally).
+#[derive(Serialize)]
+pub struct BinderOpResult {
+    tree: BinderNodeDto,
+    path: String,
+}
+
 fn load(root: &str) -> Result<Project, String> {
     Project::load_from_folder(Path::new(root)).map_err(|e| e.to_string())
 }
@@ -145,13 +159,25 @@ pub fn binder_rename(
     root: String,
     path: String,
     new_name: String,
-) -> Result<BinderNodeDto, String> {
+) -> Result<BinderOpResult, String> {
     let mut project = load(&root)?;
-    project
+    let dest = project
         .rename(Path::new(&path), &new_name)
         .map_err(|e| e.to_string())?;
     project.rescan();
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(BinderOpResult {
+        tree: BinderNodeDto::from(&project.tree.root),
+        path: dest.display().to_string(),
+    })
+}
+
+/// Whether deleting `path` right now would route it into Trash rather than
+/// permanently remove it — lets the frontend word its confirm dialog
+/// accurately ("Move to Trash?" vs "This cannot be undone.").
+#[tauri::command]
+pub fn deletes_to_trash(root: String, path: String) -> Result<bool, String> {
+    let project = load(&root)?;
+    Ok(project.deletes_to_trash(Path::new(&path)))
 }
 
 #[tauri::command]
@@ -164,18 +190,46 @@ pub fn binder_delete(root: String, path: String) -> Result<BinderNodeDto, String
     Ok(BinderNodeDto::from(&project.tree.root))
 }
 
+/// Restore a trashed item to the folder it was deleted from. `recreate`
+/// mirrors `Project::restore_from_trash`'s `recreate_missing_folder` flag — the
+/// frontend calls this first with `recreate: false`, and on an
+/// `ORIGINAL_FOLDER_MISSING:<path>` error, offers to recreate that folder and
+/// retries with `recreate: true`, same two-step confirm the real app's own
+/// Restore prompt uses.
+#[tauri::command]
+pub fn binder_restore(
+    root: String,
+    path: String,
+    recreate: bool,
+) -> Result<BinderOpResult, String> {
+    let mut project = load(&root)?;
+    match project.restore_from_trash(Path::new(&path), recreate) {
+        Ok(dest) => Ok(BinderOpResult {
+            tree: BinderNodeDto::from(&project.tree.root),
+            path: dest.display().to_string(),
+        }),
+        Err(RestoreError::OriginalFolderMissing(folder)) => {
+            Err(format!("ORIGINAL_FOLDER_MISSING:{}", folder.display()))
+        }
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 #[tauri::command]
 pub fn binder_move(
     root: String,
     path: String,
     new_parent: String,
-) -> Result<BinderNodeDto, String> {
+) -> Result<BinderOpResult, String> {
     let mut project = load(&root)?;
-    project
+    let dest = project
         .move_item(Path::new(&path), Path::new(&new_parent))
         .map_err(|e| e.to_string())?;
     project.rescan();
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(BinderOpResult {
+        tree: BinderNodeDto::from(&project.tree.root),
+        path: dest.display().to_string(),
+    })
 }
 
 #[tauri::command]
@@ -183,11 +237,45 @@ pub fn binder_move_before(
     root: String,
     path: String,
     before: String,
-) -> Result<BinderNodeDto, String> {
+) -> Result<BinderOpResult, String> {
     let mut project = load(&root)?;
-    project
+    let dest = project
         .move_item_before(Path::new(&path), Path::new(&before))
         .map_err(|e| e.to_string())?;
     project.rescan();
-    Ok(BinderNodeDto::from(&project.tree.root))
+    Ok(BinderOpResult {
+        tree: BinderNodeDto::from(&project.tree.root),
+        path: dest.display().to_string(),
+    })
+}
+
+/// Open (creating from the Daily Notes template if needed) today's daily
+/// note — see `Project::open_or_create_daily_note`. Errors with a plain
+/// message when Daily Notes isn't enabled for this project, same wording the
+/// real app's `ShortcutAction::OpenDailyNote` handler uses.
+#[derive(Serialize)]
+pub struct DailyNoteResult {
+    path: String,
+    cursor: Option<usize>,
+}
+
+#[tauri::command]
+pub fn open_daily_note(root: String) -> Result<DailyNoteResult, String> {
+    let mut project = load(&root)?;
+    if !project.daily_notes_enabled() {
+        return Err("Daily Notes is off — enable it in Project Settings > Daily Notes".to_string());
+    }
+    let settings = smaragd_core::settings::config_file_path()
+        .map(|path| Settings::load_from_path(&NativeStore, &path))
+        .unwrap_or_default();
+    let (path, cursor) = project
+        .open_or_create_daily_note(
+            &settings.template_date_format,
+            &settings.template_time_format,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(DailyNoteResult {
+        path: path.display().to_string(),
+        cursor,
+    })
 }
