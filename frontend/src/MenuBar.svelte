@@ -84,11 +84,50 @@
 
   function close() {
     openMenu = null;
+    closeSubmenu();
   }
 
   function run(action: () => void) {
     action();
     close();
+  }
+
+  // Theme/Color Binder By's flyouts need `position: fixed` with a
+  // JS-computed screen position rather than plain CSS :hover + `left:
+  // 100%` — the dropdown they live in has `overflow: auto` (so a long
+  // menu can scroll instead of running off-screen), and an
+  // absolutely-positioned submenu is clipped by that regardless of DOM
+  // nesting; `position: fixed` escapes it since nothing up the ancestor
+  // chain uses `transform`/`filter`/`contain` to create a new containing
+  // block for fixed-position descendants.
+  let submenuTrigger = $state<{ index: number; top: number; left: number } | null>(null);
+  // Since `.submenu` is fixed-positioned (not visually inside
+  // `.submenu-trigger`), moving the pointer from the trigger label across
+  // to the flyout itself briefly leaves the trigger's own box — a short
+  // grace period before actually closing is what keeps that from
+  // flickering shut mid-move, same trick native menus use.
+  let submenuCloseTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function openSubmenu(e: MouseEvent, index: number) {
+    clearTimeout(submenuCloseTimer);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    submenuTrigger = { index, top: rect.top, left: rect.right };
+  }
+
+  function scheduleCloseSubmenu() {
+    clearTimeout(submenuCloseTimer);
+    submenuCloseTimer = setTimeout(() => {
+      submenuTrigger = null;
+    }, 150);
+  }
+
+  function cancelCloseSubmenu() {
+    clearTimeout(submenuCloseTimer);
+  }
+
+  function closeSubmenu() {
+    clearTimeout(submenuCloseTimer);
+    submenuTrigger = null;
   }
 
   function dock(id: string) {
@@ -465,26 +504,39 @@
             {#if "separator" in item}
               <div class="separator"></div>
             {:else if "submenu" in item}
-              <div class="submenu-trigger">
+              <div
+                class="submenu-trigger"
+                role="presentation"
+                onmouseenter={(e) => openSubmenu(e, i)}
+                onmouseleave={scheduleCloseSubmenu}
+              >
                 <span>{item.label}</span>
                 <span class="arrow">▸</span>
-                <div class="submenu">
-                  {#each item.submenu() as sub, j (j)}
-                    {#if "separator" in sub}
-                      <div class="separator"></div>
-                    {:else if !("submenu" in sub)}
-                      <button class="item" disabled={sub.disabled} onclick={() => run(sub.action)}>
-                        <span class="label-group">
-                          <span class="check">{sub.checked ? "●" : ""}</span>
-                          <span>{sub.label}</span>
-                        </span>
-                        {#if sub.shortcutId}
-                          <span class="shortcut">{shortcutLabel(sub.shortcutId) ?? ""}</span>
-                        {/if}
-                      </button>
-                    {/if}
-                  {/each}
-                </div>
+                {#if submenuTrigger?.index === i}
+                  <div
+                    class="submenu"
+                    role="presentation"
+                    style="top: {submenuTrigger.top}px; left: {submenuTrigger.left}px;"
+                    onmouseenter={cancelCloseSubmenu}
+                    onmouseleave={scheduleCloseSubmenu}
+                  >
+                    {#each item.submenu() as sub, j (j)}
+                      {#if "separator" in sub}
+                        <div class="separator"></div>
+                      {:else if !("submenu" in sub)}
+                        <button class="item" disabled={sub.disabled} onclick={() => run(sub.action)}>
+                          <span class="label-group">
+                            <span class="check">{sub.checked ? "●" : ""}</span>
+                            <span>{sub.label}</span>
+                          </span>
+                          {#if sub.shortcutId}
+                            <span class="shortcut">{shortcutLabel(sub.shortcutId) ?? ""}</span>
+                          {/if}
+                        </button>
+                      {/if}
+                    {/each}
+                  </div>
+                {/if}
               </div>
             {:else}
               <button class="item" disabled={item.disabled} onclick={() => run(item.action)}>
@@ -631,10 +683,15 @@
     width: 0.9rem;
   }
 
-  /* Flyout submenus (Theme, Color Binder By) — plain CSS :hover, same
-     mouse-only tradeoff BinderTree.svelte's context-menu flyouts make. */
+  /* Flyout submenus (Theme, Color Binder By) — mouse-only (no :hover on
+     touch), same tradeoff BinderTree.svelte's context-menu flyouts make.
+     `.submenu` is `position: fixed` with its top/left set inline from
+     `submenuTrigger` (computed on mouseenter): the dropdown it lives in
+     has `overflow: auto` so a long menu can scroll rather than run off
+     the bottom of the screen, and that clips any absolutely-positioned
+     descendant regardless of DOM nesting — `position: fixed` is what
+     actually escapes it. */
   .submenu-trigger {
-    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -643,8 +700,7 @@
     cursor: default;
   }
 
-  .submenu-trigger:hover,
-  .submenu-trigger:focus-within {
+  .submenu-trigger:hover {
     background: var(--color-selected-bg);
   }
 
@@ -654,22 +710,16 @@
   }
 
   .submenu {
-    display: none;
-    position: absolute;
-    left: 100%;
-    top: -0.25rem;
+    position: fixed;
     min-width: 12rem;
     max-height: 70vh;
     overflow: auto;
+    display: flex;
     flex-direction: column;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
     padding: 0.25rem 0;
-  }
-
-  .submenu-trigger:hover > .submenu,
-  .submenu-trigger:focus-within > .submenu {
-    display: flex;
+    z-index: 200;
   }
 </style>
