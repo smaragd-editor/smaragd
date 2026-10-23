@@ -4,11 +4,14 @@
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import {
+    type BinderColorMode,
+    type BinderNodeDto,
     project,
     closeProject,
     openProject,
     createProject,
     openFindReplace,
+    onTreeChange,
   } from "./stores/project.svelte";
   import AboutDialog from "./AboutDialog.svelte";
   import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
@@ -71,8 +74,9 @@
         shortcutId?: string;
         action: () => void;
         disabled?: boolean;
-        hidden?: boolean;
-      };
+        checked?: boolean;
+      }
+    | { label: string; submenu: () => Item[] };
 
   function toggle(menu: string) {
     openMenu = openMenu === menu ? null : menu;
@@ -253,7 +257,8 @@
         { label: "Backlinks", shortcutId: "toggle_backlinks", action: () => dock("backlinks") },
         { label: "Tags", shortcutId: "toggle_tags", action: () => dock("tags") },
         { separator: true },
-        ...themeItems(),
+        { label: "Theme", submenu: themeSubmenuItems },
+        ...(hasProject ? [{ label: "Color Binder By", submenu: colorBinderBySubmenuItems } as Item] : []),
       ],
     },
     {
@@ -333,10 +338,24 @@
     },
   ];
 
-  function themeItems(): Item[] {
-    const items: Item[] = [{ label: "Theme: Default", action: () => setTheme(null) }];
+  // "Reload Custom Themes" (the real app's menu has it right above this
+  // list) isn't included — that's for themes loaded from files on disk, a
+  // feature this port doesn't have at all (its `color_themes_list` is a
+  // fixed built-in set), not a wiring gap to fill in.
+  function themeSubmenuItems(): Item[] {
+    const items: Item[] = [
+      {
+        label: "Default",
+        action: () => setTheme(null),
+        checked: settingsStore.value.color_theme === null,
+      },
+    ];
     for (const theme of settingsStore.colorThemes) {
-      items.push({ label: `Theme: ${theme.label}`, action: () => setTheme(theme.id) });
+      items.push({
+        label: theme.label,
+        action: () => setTheme(theme.id),
+        checked: settingsStore.value.color_theme === theme.id,
+      });
     }
     return items;
   }
@@ -346,6 +365,35 @@
     settingsStore.value = { ...settingsStore.value };
     saveSettingsDebounced();
     applyTheme();
+  }
+
+  const BINDER_COLOR_MODES: { mode: BinderColorMode; label: string }[] = [
+    { mode: "Off", label: "Off" },
+    { mode: "Status", label: "Status" },
+    { mode: "Pov", label: "POV" },
+    { mode: "WordCountProgress", label: "Word Count" },
+  ];
+
+  function colorBinderBySubmenuItems(): Item[] {
+    return BINDER_COLOR_MODES.map(({ mode, label }) => ({
+      label,
+      action: () => setBinderColorMode(mode),
+      checked: project.value?.binder_color_mode === mode,
+    }));
+  }
+
+  async function setBinderColorMode(mode: BinderColorMode) {
+    if (!project.value) return;
+    try {
+      const result = await invoke<{ binder_color_mode: BinderColorMode; tree: BinderNodeDto }>(
+        "set_binder_color_mode",
+        { root: project.value.root, mode },
+      );
+      project.value.binder_color_mode = result.binder_color_mode;
+      onTreeChange(result.tree);
+    } catch (err) {
+      showToast(String(err));
+    }
   }
 
   let showSettings = $state(false);
@@ -416,12 +464,30 @@
           {#each menu.items() as item, i (i)}
             {#if "separator" in item}
               <div class="separator"></div>
+            {:else if "submenu" in item}
+              <div class="submenu-trigger">
+                <span>{item.label}</span>
+                <span class="arrow">▸</span>
+                <div class="submenu">
+                  {#each item.submenu() as sub, j (j)}
+                    {#if "separator" in sub}
+                      <div class="separator"></div>
+                    {:else if !("submenu" in sub)}
+                      <button class="item" disabled={sub.disabled} onclick={() => run(sub.action)}>
+                        <span class="label-group">
+                          <span class="check">{sub.checked ? "●" : ""}</span>
+                          <span>{sub.label}</span>
+                        </span>
+                        {#if sub.shortcutId}
+                          <span class="shortcut">{shortcutLabel(sub.shortcutId) ?? ""}</span>
+                        {/if}
+                      </button>
+                    {/if}
+                  {/each}
+                </div>
+              </div>
             {:else}
-              <button
-                class="item"
-                disabled={item.disabled}
-                onclick={() => run(item.action)}
-              >
+              <button class="item" disabled={item.disabled} onclick={() => run(item.action)}>
                 <span>{item.label}</span>
                 {#if item.shortcutId}
                   <span class="shortcut">{shortcutLabel(item.shortcutId) ?? ""}</span>
@@ -553,5 +619,57 @@
     height: 1px;
     background: var(--color-border);
     margin: 0.25rem 0.5rem;
+  }
+
+  .label-group {
+    display: flex;
+    align-items: center;
+  }
+
+  .check {
+    display: inline-block;
+    width: 0.9rem;
+  }
+
+  /* Flyout submenus (Theme, Color Binder By) — plain CSS :hover, same
+     mouse-only tradeoff BinderTree.svelte's context-menu flyouts make. */
+  .submenu-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.35rem 0.8rem;
+    cursor: default;
+  }
+
+  .submenu-trigger:hover,
+  .submenu-trigger:focus-within {
+    background: var(--color-selected-bg);
+  }
+
+  .submenu-trigger .arrow {
+    color: var(--color-fg-muted);
+    font-size: 0.75rem;
+  }
+
+  .submenu {
+    display: none;
+    position: absolute;
+    left: 100%;
+    top: -0.25rem;
+    min-width: 12rem;
+    max-height: 70vh;
+    overflow: auto;
+    flex-direction: column;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    padding: 0.25rem 0;
+  }
+
+  .submenu-trigger:hover > .submenu,
+  .submenu-trigger:focus-within > .submenu {
+    display: flex;
   }
 </style>
