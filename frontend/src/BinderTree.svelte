@@ -536,13 +536,22 @@
      explicit ▶/▼ matching the real app's own triangle exactly, same glyph
      swapped on open rather than a CSS rotate, simplest thing that reads
      the same both states. */
+  /* No justify-content: space-between here (unlike .doc-row) — the ▶/▼
+     triangle below is itself a flex child (a ::before pseudo-element,
+     not the UA's own separate marker box the way the old native
+     <summary> marker was), so space-between would shove it to one edge
+     and the name to the other instead of keeping them adjacent. .name's
+     flex: 1 does the same "push .actions to the end" job instead. */
   summary {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.5rem;
     cursor: pointer;
     list-style: none;
+  }
+
+  summary .name {
+    flex: 1;
   }
 
   summary::-webkit-details-marker {
