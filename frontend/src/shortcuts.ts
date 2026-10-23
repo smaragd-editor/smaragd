@@ -23,6 +23,8 @@ import {
   cycleNote,
   openDailyNote,
   cycleBinderColorMode,
+  goBackDocument,
+  goForwardDocument,
 } from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
@@ -325,6 +327,8 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_inline_backlinks", toggleInlineBacklinks);
   registerShortcutHandler("toggle_dark_mode", toggleDarkMode);
   registerShortcutHandler("cycle_binder_color_mode", cycleBinderColorMode);
+  registerShortcutHandler("go_back", goBackDocument);
+  registerShortcutHandler("go_forward", goForwardDocument);
   registerShortcutHandler("toggle_document_stats", () => {
     settingsStore.value.show_document_stats_in_binder =
       !settingsStore.value.show_document_stats_in_binder;

@@ -108,9 +108,66 @@ export async function openDocument(path: string) {
     project.selectedPath = path;
     editorRef?.setDocument(text);
     schedulePreview();
+    pushRecentFile(path);
+    pushHistory(path);
   } catch (err) {
     project.documentError = String(err);
   }
+}
+
+// Go Back/Forward + Recent Files: a plain in-memory browser-style history
+// and a most-recently-opened list, both client-side only — the real app's
+// equivalent (`core::editor::EditorState`) is a full server-held multi-tab
+// model (open/save/close tabs, dirty tracking, cursor position) that this
+// port's intentionally-stateless, tab-less document model (just
+// `selectedPath`/`documentText` above) doesn't have a slot for. Reusing it
+// faithfully would mean introducing session state in the Tauri backend; this
+// gives the same two behaviors (step back/forward, reopen something recent)
+// without that architectural change.
+const MAX_HISTORY = 50;
+const MAX_RECENT_FILES = 20;
+let history: string[] = [];
+let historyIndex = -1;
+let navigatingHistory = false;
+let recentFiles: string[] = [];
+
+function pushHistory(path: string) {
+  if (navigatingHistory || history[historyIndex] === path) return;
+  history = [...history.slice(0, historyIndex + 1), path].slice(-MAX_HISTORY);
+  historyIndex = history.length - 1;
+}
+
+function pushRecentFile(path: string) {
+  recentFiles = [path, ...recentFiles.filter((p) => p !== path)].slice(0, MAX_RECENT_FILES);
+}
+
+/** A snapshot, not a reactive store — RecentFiles.svelte reads this once
+ * when it opens rather than subscribing, since the list only changes on
+ * document open (which closes any such palette anyway). */
+export function recentlyOpenedPaths(): string[] {
+  return recentFiles;
+}
+
+export async function goBackDocument() {
+  if (historyIndex <= 0) {
+    showToast("Nothing to go back to");
+    return;
+  }
+  historyIndex -= 1;
+  navigatingHistory = true;
+  await openDocument(history[historyIndex]);
+  navigatingHistory = false;
+}
+
+export async function goForwardDocument() {
+  if (historyIndex >= history.length - 1) {
+    showToast("Nothing to go forward to");
+    return;
+  }
+  historyIndex += 1;
+  navigatingHistory = true;
+  await openDocument(history[historyIndex]);
+  navigatingHistory = false;
 }
 
 export function onEditorChange(text: string) {

@@ -20,16 +20,25 @@
   // notImplemented() placeholders until this pass, listed for structural
   // fidelity first and wired for real once a user asked for them.
   //
-  // Still genuinely stubbed, deliberately: New Project, Recent Projects,
-  // Open Document (project-lifecycle UI beyond a folder picker, out of
-  // this pass's scope), Project Settings (a whole second dialog, not built),
-  // Exit (no Tauri equivalent wired), Focus Mode / Toggle Spell Check
-  // (features that don't exist in this build), and Reload Plugins/Enable
-  // Project Plugins — that one is different in kind, not just unfinished:
-  // there is no plugin engine anywhere in this Tauri port (no Rhai
-  // scripting, no :command registration), so there's nothing to reload.
-  // It's left as a clear "no plugin engine in this build" message rather
-  // than faked as if a real action were just missing its wiring.
+  // Still genuinely stubbed, deliberately: New Project, Recent Projects
+  // (project-lifecycle UI beyond a folder picker, out of this pass's
+  // scope), Project Settings (a whole second dialog, not built), Exit (no
+  // Tauri equivalent wired), Focus Mode / Toggle Spell Check (features that
+  // don't exist in this build), and Reload Plugins/Enable Project Plugins —
+  // that one is different in kind, not just unfinished: there is no plugin
+  // engine anywhere in this Tauri port (no Rhai scripting, no :command
+  // registration), so there's nothing to reload. It's left as a clear "no
+  // plugin engine in this build" message rather than faked as if a real
+  // action were just missing its wiring.
+  //
+  // Open Document now opens the same quick-switcher as Search Everywhere —
+  // this port's Search Everywhere was already scoped down to document-title
+  // search only (see SearchEverywhere.svelte's own comment), so it already
+  // *is* what the real app's separate Cmd+P quick-open does; Recent Files
+  // and Go Back/Forward are a plain client-side history/recency list (see
+  // stores/project.svelte.ts), not the real app's server-held
+  // core::editor::EditorState — this port's document model has no tabs for
+  // that state to live on.
   //
   // Submenus (Recent Projects, Import's per-format choice, Color Binder
   // By) are flattened or replaced with a native file-picker's own format
@@ -158,8 +167,9 @@
         { label: "Recent Projects", action: () => notImplemented("Recent Projects") },
         { label: "Close Project", action: closeProject, disabled: !hasProject },
         { separator: true },
-        { label: "Open Document…", action: () => notImplemented("Open Document") },
+        { label: "Open Document…", action: () => runShortcutAction("open_document") },
         { label: "Search Everywhere…", action: () => runShortcutAction("search_everywhere") },
+        { label: "Recent Files…", action: () => runShortcutAction("recent_files") },
         { label: "Close Document", action: () => runShortcutAction("close_document") },
         { label: "Go Back", action: () => runShortcutAction("go_back") },
         { label: "Go Forward", action: () => runShortcutAction("go_forward") },
@@ -309,6 +319,7 @@
   let showAbout = $state(false);
   let showCommandPrompt = $state(false);
   let showSearchEverywhere = $state(false);
+  let showRecentFiles = $state(false);
   let showExport = $state(false);
   let showGitCommit = $state(false);
   let gitCommitAndPush = $state(false);
@@ -320,6 +331,8 @@
     registerShortcutHandler("find_replace", openFindReplace);
     registerShortcutHandler("command_prompt", () => (showCommandPrompt = true));
     registerShortcutHandler("search_everywhere", () => (showSearchEverywhere = true));
+    registerShortcutHandler("open_document", () => (showSearchEverywhere = true));
+    registerShortcutHandler("recent_files", () => (showRecentFiles = true));
     registerShortcutHandler("git_commit", () => {
       gitCommitAndPush = false;
       showGitCommit = true;
@@ -404,6 +417,12 @@
 {#if showSearchEverywhere}
   {#await import("./SearchEverywhere.svelte") then { default: SearchEverywhere }}
     <SearchEverywhere onClose={() => (showSearchEverywhere = false)} />
+  {/await}
+{/if}
+
+{#if showRecentFiles}
+  {#await import("./RecentFiles.svelte") then { default: RecentFiles }}
+    <RecentFiles onClose={() => (showRecentFiles = false)} />
   {/await}
 {/if}
 

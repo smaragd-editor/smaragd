@@ -8,7 +8,36 @@
   // contents, out of scope for "wire up the menu item" on its own; the
   // Command Prompt (shortcuts.ts's catalog) already covers the "actions"
   // half of the real modal.
+  //
+  // Also doubles as the real app's separate "Open Document" quick-switcher
+  // (Cmd+P there) — this port's own Search Everywhere was already scoped
+  // down to exactly that (document-title search, no full-text/actions/
+  // settings), so building a second near-identical palette for a narrower
+  // version of the same thing wasn't worth it; `open_document` in
+  // shortcuts.ts just opens this same component.
   let { onClose }: { onClose: () => void } = $props();
+
+  /** A subsequence match (every query char appears in order, not
+   * necessarily contiguous) scored by how compact and how early the match
+   * is — standard "quick open" fuzzy ranking, replacing a plain substring
+   * filter so e.g. "cm1" finds "Chapter Mystery 1". Returns `null` for no
+   * match at all. */
+  function fuzzyScore(name: string, query: string): number | null {
+    if (!query) return 0;
+    const target = name.toLowerCase();
+    const q = query.toLowerCase();
+    let from = 0;
+    let first = -1;
+    let last = -1;
+    for (const ch of q) {
+      const idx = target.indexOf(ch, from);
+      if (idx === -1) return null;
+      if (first === -1) first = idx;
+      last = idx;
+      from = idx + 1;
+    }
+    return (last - first - q.length + 1) * 1000 + first;
+  }
 
   let query = $state("");
   let selected = $state(0);
@@ -28,7 +57,12 @@
   });
 
   const results = $derived(
-    allDocuments.filter((d) => d.name.toLowerCase().includes(query.toLowerCase())).slice(0, 30),
+    allDocuments
+      .map((d) => ({ doc: d, score: fuzzyScore(d.name, query) }))
+      .filter((r): r is { doc: { name: string; path: string }; score: number } => r.score !== null)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 30)
+      .map((r) => r.doc),
   );
 
   function select(path: string) {
