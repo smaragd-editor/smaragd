@@ -273,7 +273,7 @@ pub fn set_project_synopsis(root: String, synopsis: String) -> Result<(), String
     project.set_synopsis(synopsis).map_err(|e| e.to_string())
 }
 
-fn global_settings() -> Settings {
+pub(crate) fn global_settings() -> Settings {
     smaragd_core::settings::config_file_path()
         .map(|path| Settings::load_from_path(&NativeStore, &path))
         .unwrap_or_default()

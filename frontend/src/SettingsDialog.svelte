@@ -282,6 +282,16 @@
             </select>
           </label>
           <label class="row">
+            UI font
+            <select bind:value={settingsStore.value.ui_font} onchange={update}>
+              <option value="Proportional">Proportional</option>
+              <option value="Monospace">Monospace</option>
+              <option value="LibertinusSerif">Libertinus Serif</option>
+              <option value="DejaVuSansMono">DejaVu Sans Mono</option>
+              <option value="AtkinsonHyperlegible">Atkinson Hyperlegible</option>
+            </select>
+          </label>
+          <label class="row">
             UI scale (%)
             <input
               type="number"
@@ -306,6 +316,22 @@
               <option value="DejaVuSansMono">DejaVu Sans Mono</option>
               <option value="AtkinsonHyperlegible">Atkinson Hyperlegible</option>
             </select>
+          </label>
+          <label class="row">
+            Size (pt)
+            <input
+              type="number"
+              min="8"
+              max="48"
+              placeholder="14"
+              value={settingsStore.value.editor_font_size || ""}
+              oninput={(e) => {
+                settingsStore.value.editor_font_size = Number(
+                  (e.target as HTMLInputElement).value,
+                );
+                update();
+              }}
+            />
           </label>
           <label class="row">
             <input
@@ -391,6 +417,27 @@
               }}
             />
             Enable Git integration
+          </label>
+          <label class="column">
+            Commit message template
+            <textarea
+              rows="4"
+              placeholder={settingsStore.value.git_commit_message_template === null
+                ? "Smaragd backup\n\n{{fileList}}"
+                : ""}
+              value={settingsStore.value.git_commit_message_template ?? ""}
+              oninput={(e) => {
+                const v = (e.target as HTMLTextAreaElement).value;
+                settingsStore.value.git_commit_message_template = v === "" ? null : v;
+                update();
+              }}
+            ></textarea>
+            <span class="hint">
+              Placeholders: {"{{date}}"}, {"{{time}}"}, {"{{numFiles}}"}, {"{{linesAdded}}"},
+              {"{{linesChanged}}"}, {"{{linesDeleted}}"}, {"{{fileList}}"}. Used for a manual
+              commit's pre-filled message and for every automatic commit. A blank line starts the
+              commit body, same as git's own subject/body convention.
+            </span>
           </label>
           <h4>Backups</h4>
           <label class="row">
@@ -496,6 +543,22 @@
             />
           </label>
           <label class="row">
+            Cycles before long break
+            <input
+              type="number"
+              min="1"
+              max="20"
+              placeholder="4"
+              value={settingsStore.value.pomodoro_cycles_before_long_break || ""}
+              oninput={(e) => {
+                settingsStore.value.pomodoro_cycles_before_long_break = Number(
+                  (e.target as HTMLInputElement).value,
+                );
+                update();
+              }}
+            />
+          </label>
+          <label class="row">
             <input
               type="checkbox"
               bind:checked={settingsStore.value.pomodoro_notifications_enabled}
@@ -503,10 +566,6 @@
             />
             Show a desktop notification when a phase completes
           </label>
-          <p class="note">
-            Not yet read by the Pomodoro panel itself (still Phase 1's hardcoded 25/5/15/4) —
-            persists here, wiring it in is a later refinement.
-          </p>
         {:else if active === "Shortcuts"}
           <table>
             <thead>
@@ -631,6 +690,24 @@
   .row.buttons {
     justify-content: flex-end;
     gap: 0.5rem;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+  }
+
+  .column textarea {
+    font-family: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+  }
+
+  .hint {
+    font-size: 0.75rem;
+    color: var(--color-fg-muted);
   }
 
   h4 {

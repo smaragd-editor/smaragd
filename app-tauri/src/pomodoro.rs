@@ -11,40 +11,61 @@
 //! latency a push doesn't have).
 
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use smaragd_core::pomodoro::{PomodoroDurations, PomodoroPhase, PomodoroState};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
+use crate::project::global_settings;
+
 const TICK_EVENT: &str = "pomodoro://tick";
+
+const DEFAULT_WORK_MINUTES: u32 = 25;
+const DEFAULT_SHORT_BREAK_MINUTES: u32 = 5;
+const DEFAULT_LONG_BREAK_MINUTES: u32 = 15;
+const DEFAULT_CYCLES_BEFORE_LONG_BREAK: u32 = 4;
+
+/// Ports `app::pomodoro::resolve_durations` — `0` in any of `Settings`'
+/// four `pomodoro_*` duration/cycle fields means "unset" (a fresh
+/// `Settings::default()`), resolved to a real default here, same
+/// convention as `editor_font::resolve_size`. Read fresh on every call
+/// that needs it (`pomodoro_start`/`pomodoro_skip`/the ticker), not cached
+/// on `PomodoroHandle`, so a Settings change takes effect on the very next
+/// tick — matching the real app's own call-by-call `resolve_durations`
+/// rather than a value computed once at startup.
+fn resolve_durations() -> PomodoroDurations {
+    let settings = global_settings();
+    let minutes = |configured: u32, default: u32| {
+        Duration::from_secs(u64::from(if configured > 0 { configured } else { default }) * 60)
+    };
+    PomodoroDurations {
+        work: minutes(settings.pomodoro_work_minutes, DEFAULT_WORK_MINUTES),
+        short_break: minutes(
+            settings.pomodoro_short_break_minutes,
+            DEFAULT_SHORT_BREAK_MINUTES,
+        ),
+        long_break: minutes(
+            settings.pomodoro_long_break_minutes,
+            DEFAULT_LONG_BREAK_MINUTES,
+        ),
+        cycles_before_long_break: if settings.pomodoro_cycles_before_long_break > 0 {
+            settings.pomodoro_cycles_before_long_break
+        } else {
+            DEFAULT_CYCLES_BEFORE_LONG_BREAK
+        },
+    }
+}
 
 pub struct PomodoroHandle {
     state: Mutex<PomodoroState>,
-    durations: PomodoroDurations,
-}
-
-impl PomodoroHandle {
-    /// Phase 1 scaffold uses the built-in defaults (25/5/15/4) rather than
-    /// reading `Settings` — `Settings` is still egui-coupled in the `app`
-    /// crate (see the Phase 0 notes) and hasn't been ported here yet.
-    fn default_durations() -> PomodoroDurations {
-        PomodoroDurations {
-            work: std::time::Duration::from_secs(25 * 60),
-            short_break: std::time::Duration::from_secs(5 * 60),
-            long_break: std::time::Duration::from_secs(15 * 60),
-            cycles_before_long_break: 4,
-        }
-    }
 }
 
 impl Default for PomodoroHandle {
     fn default() -> Self {
-        let durations = Self::default_durations();
         Self {
-            state: Mutex::new(PomodoroState::new(&durations)),
-            durations,
+            state: Mutex::new(PomodoroState::new(&resolve_durations())),
         }
     }
 }
@@ -97,7 +118,7 @@ pub fn pomodoro_pause(handle: State<PomodoroHandle>) {
 #[tauri::command]
 pub fn pomodoro_skip(handle: State<PomodoroHandle>) {
     let mut state = handle.state.lock().expect("pomodoro state mutex poisoned");
-    state.skip(&handle.durations);
+    state.skip(&resolve_durations());
 }
 
 /// Spawns the 1Hz background ticker. Called once from `run()` at startup.
@@ -111,13 +132,15 @@ pub fn pomodoro_skip(handle: State<PomodoroHandle>) {
 pub fn spawn_ticker(app: AppHandle) {
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(Duration::from_secs(1));
             let handle = app.state::<PomodoroHandle>();
             let transition = {
                 let mut state = handle.state.lock().expect("pomodoro state mutex poisoned");
-                state.tick(Instant::now(), &handle.durations)
+                state.tick(Instant::now(), &resolve_durations())
             };
-            if let Some(transition) = transition {
+            if let Some(transition) = transition
+                && global_settings().pomodoro_notifications_enabled
+            {
                 let _ = app
                     .notification()
                     .builder()

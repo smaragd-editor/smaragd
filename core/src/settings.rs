@@ -160,6 +160,10 @@ const DEFAULT_BACKUP_KEEP_COUNT: u32 = 10;
 const DEFAULT_UI_SCALE: f32 = 1.0;
 const DEFAULT_GIT_COMMIT_MESSAGE_TEMPLATE: &str = "Smaragd backup\n\n{{fileList}}";
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -202,6 +206,15 @@ pub struct Settings {
     pub pomodoro_short_break_minutes: u32,
     pub pomodoro_long_break_minutes: u32,
     pub pomodoro_cycles_before_long_break: u32,
+    /// Unlike every other `bool` field here, this one's real default is
+    /// `true` (matching the egui app's own `Settings::default()`) — a
+    /// phase-complete notification is the whole point of running a
+    /// Pomodoro timer, so it needs an explicit opt-out rather than an
+    /// opt-in. A plain `bool` can't carry its own "unset" sentinel the way
+    /// the `0`-means-unset numeric fields above do, so this is resolved via
+    /// `default_true` both for a missing key in an on-disk settings file
+    /// and for `Settings::default()` itself — see that impl below.
+    #[serde(default = "default_true")]
     pub pomodoro_notifications_enabled: bool,
 
     pub typewriter_quotes: bool,
@@ -247,9 +260,22 @@ pub fn config_file_path() -> Option<PathBuf> {
 }
 
 impl Settings {
+    /// Both branches go through `toml::from_str`, not the plain derived
+    /// `Settings::default()` (which — being `#[derive(Default)]` — gives
+    /// every `bool` field `false`), so a missing/unreadable settings file
+    /// resolves each field the exact same way a *present* file missing
+    /// that one key would: via the struct-level `#[serde(default)]`
+    /// fallback, or a field's own override like
+    /// `pomodoro_notifications_enabled`'s `default_true`. (`Settings::
+    /// default()` itself can't be implemented this way — serde's own
+    /// container-level `#[serde(default)]` codegen calls `Default::
+    /// default()` to source whichever fields *don't* have their own
+    /// field-level override, so routing `Default::default()` through
+    /// `toml::from_str` here would recurse infinitely; confirmed by a
+    /// stack overflow when first tried.)
     pub fn load_from_path(store: &dyn ProjectStore, path: &std::path::Path) -> Self {
         let Ok(contents) = store.read_to_string(path) else {
-            return Self::default();
+            return toml::from_str("").unwrap_or_default();
         };
         toml::from_str(&contents).unwrap_or_default()
     }
@@ -331,7 +357,35 @@ mod tests {
         let path = dir.path().join("does-not-exist.toml");
         let store = NativeStore;
 
-        assert_eq!(Settings::load_from_path(&store, &path), Settings::default());
+        // Not quite `Settings::default()` (the plain `#[derive(Default)]`
+        // value): `pomodoro_notifications_enabled`'s real default is
+        // `true`, which only a field-level `#[serde(default = "...")]`
+        // can express, and that only applies through actual
+        // deserialization — see `load_from_path`'s own doc comment for
+        // why `Default::default()` can't be implemented the same way.
+        assert_eq!(
+            Settings::load_from_path(&store, &path),
+            Settings {
+                pomodoro_notifications_enabled: true,
+                ..Settings::default()
+            }
+        );
+    }
+
+    #[test]
+    fn an_existing_settings_file_missing_the_notifications_key_defaults_it_to_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("smaragd-tauri.toml");
+        let store = NativeStore;
+        // Simulates upgrading from a settings.toml saved before this field
+        // existed — present file, absent key, as opposed to
+        // `missing_file_falls_back_to_defaults`'s absent-file case.
+        store.write(&path, b"reopen_last_project = true\n").unwrap();
+
+        let loaded = Settings::load_from_path(&store, &path);
+
+        assert!(loaded.reopen_last_project);
+        assert!(loaded.pomodoro_notifications_enabled);
     }
 
     #[test]
