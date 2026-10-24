@@ -538,7 +538,12 @@
       label: "View",
       mnemonic: "V",
       items: () => [
-        { label: "Editor", action: () => dock("editor"), disabled: !hasProject },
+        {
+          label: "Editor",
+          shortcutId: "toggle_editor",
+          action: () => dock("editor"),
+          disabled: !hasProject,
+        },
         {
           label: "Preview",
           shortcutId: "toggle_preview",
@@ -564,7 +569,12 @@
           disabled: !hasProject,
         },
         { separator: true },
-        { label: "Binder", action: () => dock("binder"), disabled: !hasProject },
+        {
+          label: "Binder",
+          shortcutId: "toggle_binder",
+          action: () => dock("binder"),
+          disabled: !hasProject,
+        },
         {
           label: "Metadata",
           shortcutId: "edit_metadata",

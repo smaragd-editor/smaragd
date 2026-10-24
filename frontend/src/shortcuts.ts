@@ -76,6 +76,13 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   { id: "open_project_settings", label: "Project Settings", category: "Project", default: bare("f4") },
   { id: "exit", label: "Exit", category: "Application", default: cmd("q") },
   { id: "toggle_preview", label: "Toggle Preview", category: "View", default: cmdShift("p") },
+  // The real app has no dedicated shortcut for either of these (View
+  // menu's "Editor"/"Binder" are plain nav.button(), not
+  // nav.shortcut_button() — see menu_bar.rs) — every *other* dock tab
+  // already has one, so this port adds them for consistency rather than
+  // leaving the two most-used panels as the only ones without a toggle key.
+  { id: "toggle_editor", label: "Toggle Editor", category: "View", default: bare("f1") },
+  { id: "toggle_binder", label: "Toggle Binder", category: "View", default: bare("f3") },
   { id: "save", label: "Save", category: "Editing", default: cmd("s") },
   { id: "new_file", label: "New File", category: "FilesAndFolders", default: cmd("n") },
   { id: "new_folder", label: "New Folder", category: "FilesAndFolders", default: cmdShift("f") },
@@ -283,6 +290,8 @@ export function handleGlobalKeydown(event: KeyboardEvent) {
 // toggle actions don't have but this port's dock integration doesn't
 // support cleanly yet; opening is still the common case.
 const DOCK_TAB_ACTIONS: Record<string, string> = {
+  toggle_editor: "editor",
+  toggle_binder: "binder",
   toggle_preview: "preview",
   toggle_corkboard: "corkboard",
   toggle_story_grid: "storygrid",
