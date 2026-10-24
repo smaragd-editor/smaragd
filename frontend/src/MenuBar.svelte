@@ -9,7 +9,7 @@
     project,
     closeProject,
     openProject,
-    createProject,
+    createProjectFromTemplate,
     openFindReplace,
     onTreeChange,
   } from "./stores/project.svelte";
@@ -29,6 +29,7 @@
     closeProjectSettingsRequest,
   } from "./stores/settingsRequest.svelte";
   import { showPrompt } from "./stores/promptDialog.svelte";
+  import { showTemplatePicker } from "./stores/templatePickerDialog.svelte";
 
   // Desktop menu bar matching the real egui app's 8-menu structure
   // (app/src/app/menu_bar.rs) as closely as this port's actual
@@ -376,17 +377,20 @@
     if (typeof selected === "string") await openProject(selected);
   }
 
-  // A name prompt + a parent-folder picker, joined with "/" — plain string
-  // concatenation rather than a path-joining helper, since there isn't one
-  // in scope on the frontend side; `Path::new` on the Rust side accepts "/"
-  // on every platform Tauri targets, so this is safe despite not being a
-  // "real" path-join.
+  // Template choice (new_project_template_prompt.rs), then a name prompt +
+  // a parent-folder picker, joined with "/" — plain string concatenation
+  // rather than a path-joining helper, since there isn't one in scope on
+  // the frontend side; `Path::new` on the Rust side accepts "/" on every
+  // platform Tauri targets, so this is safe despite not being a "real"
+  // path-join.
   async function pickAndCreateProject() {
+    const templateId = await showTemplatePicker();
+    if (!templateId) return;
     const name = await showPrompt("New project name:");
     if (!name) return;
     const parent = await openFileDialog({ directory: true, multiple: false });
     if (typeof parent !== "string") return;
-    await createProject(`${parent}/${name}`);
+    await createProjectFromTemplate(`${parent}/${name}`, templateId);
     if (project.openError) showToast(`Couldn't create project: ${project.openError}`);
   }
 

@@ -7,6 +7,7 @@ use smaragd_core::project::RestoreError;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
 use smaragd_core::project::store::NativeStore;
 use smaragd_core::project::{BinderColorMode, FolderRole, store::native_store};
+use smaragd_core::project_template;
 use smaragd_core::settings::Settings;
 
 #[derive(Serialize)]
@@ -303,11 +304,55 @@ pub fn project_open(root: String) -> Result<ProjectSummary, String> {
     Ok(project_summary(&project))
 }
 
-/// Create a brand-new project at `root` (an empty or not-yet-existing
-/// folder) and return its binder tree, same shape as `project_open`.
+#[derive(Serialize)]
+pub struct ProjectTemplateDto {
+    id: String,
+    label: String,
+    description: String,
+}
+
+/// The built-in templates plus any custom ones saved under the real app's
+/// own `project_template::global_project_templates_dir` — load errors (a
+/// malformed custom `template.toml`, an id collision) are silently dropped,
+/// same tolerance the real egui app's own loader has, since this port has
+/// no "Save Project as Template…" UI yet to produce a custom template a
+/// user would need errors about.
+fn load_project_templates() -> Vec<project_template::ProjectTemplate> {
+    let dir = project_template::global_project_templates_dir();
+    let dirs: Vec<&Path> = dir.as_deref().into_iter().collect();
+    project_template::load(&dirs).0
+}
+
 #[tauri::command]
-pub fn project_create(root: String) -> Result<ProjectSummary, String> {
+pub fn project_templates_list() -> Vec<ProjectTemplateDto> {
+    load_project_templates()
+        .into_iter()
+        .map(|t| ProjectTemplateDto {
+            id: t.id,
+            label: t.label,
+            description: t.description,
+        })
+        .collect()
+}
+
+/// Create a brand-new project at `root` (an empty or not-yet-existing
+/// folder), stamp `template_id`'s folder/document scaffold onto it, and
+/// return its binder tree, same shape as `project_open` — matching the real
+/// app's `create_project`, which applies the chosen `ProjectTemplate` right
+/// after `Project::initialize` and before `set_project`. Pass `"blank"` for
+/// the old template-less behavior. An unknown `template_id` (e.g. a deleted
+/// custom template) degrades to no scaffolding, same as the real app,
+/// rather than erroring.
+#[tauri::command]
+pub fn project_create_from_template(
+    root: String,
+    template_id: String,
+) -> Result<ProjectSummary, String> {
     let mut project = Project::initialize(Path::new(&root)).map_err(|e| e.to_string())?;
+    let templates = load_project_templates();
+    if let Some(template) = project_template::find(&templates, &template_id) {
+        template.apply(&mut project).map_err(|e| e.to_string())?;
+    }
     ensure_starter_folders(&mut project)?;
     Ok(project_summary(&project))
 }

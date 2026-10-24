@@ -124,14 +124,17 @@ export async function openProject(root: string) {
   }
 }
 
-export async function createProject(root: string) {
+export async function createProjectFromTemplate(root: string, templateId: string) {
   project.openError = null;
   project.value = null;
   project.selectedPath = null;
   project.documentText = "";
   project.previewHtml = "";
   try {
-    project.value = await invoke<ProjectSummary>("project_create", { root });
+    project.value = await invoke<ProjectSummary>("project_create_from_template", {
+      root,
+      templateId,
+    });
     recordRecentProject(root);
   } catch (err) {
     project.openError = String(err);

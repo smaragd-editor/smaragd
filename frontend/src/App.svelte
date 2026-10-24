@@ -3,6 +3,7 @@
   import ProjectView from "./ProjectView.svelte";
   import MenuBar from "./MenuBar.svelte";
   import PromptDialog from "./PromptDialog.svelte";
+  import TemplatePickerDialog from "./TemplatePickerDialog.svelte";
   import { viewport } from "./stores/viewport.svelte";
   import { loadSettings } from "./stores/settings.svelte";
   import { toast } from "./stores/toast.svelte";
@@ -34,6 +35,7 @@
     <ProjectView />
   </div>
   <PromptDialog />
+  <TemplatePickerDialog />
   {#if toast.message}
     <div class="toast">{toast.message}</div>
   {/if}
