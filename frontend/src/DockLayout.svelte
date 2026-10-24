@@ -126,21 +126,24 @@
       let direction: Direction | undefined;
       let gap: number | undefined;
       if (verticalOverlap > Math.min(myRect.height, rect.height) * 0.5) {
-        // Roughly the same row — side by side.
+        // Roughly the same row — side by side. `direction` is the side of
+        // `other` to reopen on, i.e. the side *I* was on relative to it —
+        // if `other`'s rect starts where mine ends, it's to my right, so I
+        // was to *its* left, and vice versa.
         if (rect.left >= myRect.right - 1) {
-          direction = "right";
+          direction = "left";
           gap = rect.left - myRect.right;
         } else if (myRect.left >= rect.right - 1) {
-          direction = "left";
+          direction = "right";
           gap = myRect.left - rect.right;
         }
       } else if (horizontalOverlap > Math.min(myRect.width, rect.width) * 0.5) {
-        // Roughly the same column — stacked.
+        // Roughly the same column — stacked, same reasoning.
         if (rect.top >= myRect.bottom - 1) {
-          direction = "below";
+          direction = "above";
           gap = rect.top - myRect.bottom;
         } else if (myRect.top >= rect.bottom - 1) {
-          direction = "above";
+          direction = "below";
           gap = myRect.top - rect.bottom;
         }
       }
