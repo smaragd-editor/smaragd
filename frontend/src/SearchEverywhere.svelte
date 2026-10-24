@@ -271,6 +271,8 @@
     return "No results.";
   }
 
+  let inputEl = $state<HTMLInputElement>();
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       onClose();
@@ -283,6 +285,19 @@
     } else if (e.key === "Tab") {
       e.preventDefault();
       stepTab(!e.shiftKey);
+    } else if (e.key === "ArrowLeft") {
+      // Only steals the key once the caret's already run off the start of
+      // the query text — otherwise this would break ordinary left/right
+      // cursor movement while editing it.
+      if (inputEl && inputEl.selectionStart === 0 && inputEl.selectionEnd === 0) {
+        e.preventDefault();
+        stepTab(false);
+      }
+    } else if (e.key === "ArrowRight") {
+      if (inputEl && inputEl.selectionStart === query.length && inputEl.selectionEnd === query.length) {
+        e.preventDefault();
+        stepTab(true);
+      }
     } else if (e.key === "Enter" && results[selected]) {
       results[selected].row.run();
     }
@@ -308,6 +323,7 @@
       type="text"
       placeholder="Search documents, text, actions, and settings…"
       bind:value={query}
+      bind:this={inputEl}
       oninput={() => (selected = 0)}
       autofocus
     />
