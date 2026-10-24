@@ -306,18 +306,21 @@
   >
     <div class="tabs">
       {#each TABS as t (t)}
+        <!-- tabindex="-1": this WebKitGTK view's native Tab/Shift+Tab
+             focus-traversal isn't reliably blocked by onKeydown's own
+             preventDefault, so these buttons stay keyboard-reachable only
+             through the onKeydown Tab/Left/Right handling below (which
+             drives `tab` state directly) rather than through real DOM
+             focus landing on them — otherwise native focus-traversal and
+             `tab` state drift apart (the two visibly different
+             indicators: a focus ring vs. the active-tab underline) and,
+             once traversal runs off the first/last button, escapes the
+             dialog entirely. -->
         <button
           class:active={tab === t}
+          tabindex="-1"
           onclick={() => {
             setTab(t);
-            // WebKit doesn't focus a <button> on mouse click (unlike
-            // Chromium/Firefox), so without this, clicking a tab leaves
-            // nothing focused inside the dialog at all — the next
-            // Shift+Tab's keydown then never reaches .palette's onkeydown
-            // (bubbling needs the focused element to be a descendant of
-            // it), and falls through to the browser's own focus-traversal,
-            // which lands on whatever's focusable just before this dialog
-            // in the document — the menu bar.
             inputEl?.focus();
           }}
         >
@@ -342,7 +345,7 @@
           {/if}
         {/if}
         <li>
-          <button class:selected={i === selected} onclick={row.run}>
+          <button class:selected={i === selected} tabindex="-1" onclick={row.run}>
             <span class="title">{row.title}</span>
             {#if row.context}
               <span class="context">{row.context}</span>
