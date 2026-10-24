@@ -71,7 +71,7 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 let editorRef:
   | {
       setDocument: (text: string) => void;
-      openFindReplace: () => void;
+      openFindReplace: (prefill?: string) => void;
       gotoLine: (line: number) => void;
       setMisspellings: (ranges: { from: number; to: number }[]) => void;
     }
@@ -89,8 +89,8 @@ export function registerEditor(ref: typeof editorRef) {
   }
 }
 
-export function openFindReplace() {
-  editorRef?.openFindReplace();
+export function openFindReplace(prefill?: string) {
+  editorRef?.openFindReplace(prefill);
 }
 
 // Mirrors core::settings::Settings::record_recent_project exactly (most-
@@ -380,10 +380,11 @@ function currentFolder(): string {
   return idx >= 0 ? project.selectedPath.slice(0, idx) : project.value.root;
 }
 
-export async function newDocumentAtSelection() {
+/** Shared by newDocumentAtSelection (prompts for the name first) and the
+ * `:new <title>` command prompt command (gets it as the command's argument
+ * instead) — both create at currentFolder() and open the result. */
+export async function createDocumentAtSelection(name: string) {
   if (!project.value) return;
-  const name = await showPrompt("New document name:", "Untitled");
-  if (!name) return;
   try {
     const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_create_document", {
       root: project.value.root,
@@ -395,6 +396,13 @@ export async function newDocumentAtSelection() {
   } catch (err) {
     showToast(`Couldn't create document: ${err}`);
   }
+}
+
+export async function newDocumentAtSelection() {
+  if (!project.value) return;
+  const name = await showPrompt("New document name:", "Untitled");
+  if (!name) return;
+  await createDocumentAtSelection(name);
 }
 
 export async function newFolderAtSelection() {

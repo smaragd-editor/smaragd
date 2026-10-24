@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { filterCandidates } from "../autocomplete";
   import { project, applyDocumentMetaEdit } from "../stores/project.svelte";
   import { metadataSelection } from "../stores/metadataSelection.svelte";
   import { showToast } from "../stores/toast.svelte";
@@ -121,21 +122,6 @@
     return [...tags, trimmed];
   }
 
-  // Mirrors the real app's autocomplete::filter_candidates: prefix matches
-  // first (alphabetical), then substring matches (alphabetical).
-  function filterCandidates(candidates: string[], query: string): string[] {
-    const q = query.toLowerCase();
-    const startsWith: string[] = [];
-    const contains: string[] = [];
-    for (const c of candidates) {
-      const lower = c.toLowerCase();
-      if (lower.startsWith(q)) startsWith.push(c);
-      else if (lower.includes(q)) contains.push(c);
-    }
-    startsWith.sort();
-    contains.sort();
-    return [...startsWith, ...contains];
-  }
 
   function tagSuggestionsFor(tagInput: string): string[] {
     return tagInput.trim() ? filterCandidates(knownTags, tagInput.trim()).slice(0, 8) : [];

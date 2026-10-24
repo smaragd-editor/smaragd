@@ -110,6 +110,20 @@
     api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
   }
 
+  // Unlike openPanel, never closes an already-open-and-active panel — for
+  // callers that want "make sure this is visible" (e.g. the `:tag` command
+  // prompt command opening the Tags dock before filtering it), not a
+  // toggle.
+  export function ensurePanelOpen(id: string) {
+    if (!api) return;
+    const existing = api.getPanel(id);
+    if (existing) {
+      existing.api.setActive();
+      return;
+    }
+    api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
+  }
+
   function persist() {
     clearTimeout(persistTimer);
     persistTimer = setTimeout(() => {
@@ -234,6 +248,7 @@
     if (!restored) defaultLayout();
     registerDockLayout({
       openPanel,
+      ensurePanelOpen,
       resetLayout,
       listSavedLayouts,
       saveCurrentLayoutAs,

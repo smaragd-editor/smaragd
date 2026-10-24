@@ -104,6 +104,7 @@ pub fn run() {
             spellcheck::spell_check_catalog,
             spellcheck::spell_check_download,
             spellcheck::spell_check_misspellings,
+            git_ops::git_enable,
             git_ops::git_commit_message_preview,
             git_ops::git_commit,
             git_ops::git_push,

@@ -1,27 +1,183 @@
 <script lang="ts">
-  import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction } from "./shortcuts";
+  import { invoke } from "@tauri-apps/api/core";
+  import {
+    project,
+    openDocument,
+    saveDocument,
+    createDocumentAtSelection,
+    openFindReplace,
+    openDailyNote,
+  } from "./stores/project.svelte";
+  import type { BinderNodeDto } from "./stores/project.svelte";
+  import { runShortcutAction } from "./shortcuts";
+  import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
+  import { applyTheme } from "./stores/theme.svelte";
+  import { showToast } from "./stores/toast.svelte";
+  import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
+  import { requestTagFilter } from "./stores/tagsRequest.svelte";
+  import {
+    parseCommand,
+    completions,
+    applyCompletion,
+    type Command,
+    type GitCommand,
+  } from "./commandPrompt";
 
-  // The real app's Command Prompt is a `:`-prefixed colon-command bar
-  // (`:theme gruvbox`, `:git commit`, `:w`, ...) with its own parser. This
-  // is a simplified substitute: a fuzzy filter over the same action
-  // catalog shortcuts.ts already has, not a command-syntax interpreter —
-  // same trade every other "do it for real but not byte-for-byte" item in
-  // this pass makes.
+  // A real vim/Helix-style `:` command line, matching the real app's own
+  // command_prompt.rs — this was a fuzzy filter over SHORTCUT_ACTIONS
+  // instead for a while (a simplified substitute, by this component's own
+  // earlier doc comment); Search Everywhere's Actions tab already covers
+  // that need now, so this went back to matching the real thing instead of
+  // duplicating it. Not ported: Command::Plugin (no plugin engine in this
+  // build, same reason MenuBar's Reload Plugins stays a stub).
   let { onClose }: { onClose: () => void } = $props();
 
-  let query = $state("");
+  let input = $state("");
   let selected = $state(0);
+  let error = $state<string | null>(null);
 
-  const results = $derived(
-    SHORTCUT_ACTIONS.filter((a) => a.label.toLowerCase().includes(query.toLowerCase())).slice(
-      0,
-      20,
-    ),
-  );
+  function collectDocuments(node: BinderNodeDto, out: { stem: string; path: string }[]) {
+    if (node.kind === "Document") {
+      out.push({ stem: node.name.replace(/\.md$/, ""), path: node.path });
+    } else {
+      for (const child of node.children) collectDocuments(child, out);
+    }
+  }
 
-  function run(actionId: string) {
-    runShortcutAction(actionId);
+  const documents = $derived.by(() => {
+    const out: { stem: string; path: string }[] = [];
+    if (project.value) collectDocuments(project.value.tree, out);
+    return out;
+  });
+
+  const noteTitles = $derived(documents.map((d) => d.stem));
+  const themeIds = $derived(settingsStore.colorThemes.map((t) => t.id));
+  const gitEnabled = $derived(!settingsStore.value.git_integration_disabled);
+
+  let tagNames = $state<string[]>([]);
+  $effect(() => {
+    const root = project.value?.root;
+    if (!root) return;
+    invoke<string[]>("all_tags", { root })
+      .then((r) => (tagNames = r))
+      .catch(() => {});
+  });
+
+  const suggestions = $derived(completions(input, noteTitles, themeIds, tagNames, gitEnabled));
+
+  function findDocumentByStem(title: string): string | null {
+    return documents.find((d) => d.stem === title)?.path ?? null;
+  }
+
+  async function executeGit(cmd: GitCommand) {
+    if (!project.value) return;
+    const root = project.value.root;
+    if (!gitEnabled) {
+      showToast("Git integration is disabled — enable it in Settings > Versions");
+      return;
+    }
+    try {
+      switch (cmd.kind) {
+        case "enable":
+          await invoke("git_enable", { root });
+          showToast("Git support enabled");
+          break;
+        case "commit":
+          if (cmd.message) {
+            await invoke("git_commit", { root, message: cmd.message });
+            showToast("Committed");
+          } else {
+            runShortcutAction("git_commit");
+          }
+          break;
+        case "push":
+          runShortcutAction("git_push");
+          break;
+        case "pull":
+          runShortcutAction("git_pull");
+          break;
+        case "backup":
+          if (cmd.message) {
+            await invoke("git_commit", { root, message: cmd.message });
+            await invoke("git_push", { root });
+            showToast("Committed and pushed");
+          } else {
+            runShortcutAction("git_commit_and_push");
+          }
+          break;
+      }
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function execute(command: Command) {
+    switch (command.kind) {
+      case "save":
+        await saveDocument();
+        break;
+      case "quit":
+        runShortcutAction("exit");
+        break;
+      case "saveAndQuit":
+        await saveDocument();
+        runShortcutAction("exit");
+        break;
+      case "open": {
+        const path = findDocumentByStem(command.title);
+        if (path) openDocument(path);
+        else showToast(`No note found for "${command.title}"`);
+        break;
+      }
+      case "new":
+        await createDocumentAtSelection(command.title);
+        break;
+      case "darkMode":
+        settingsStore.value.theme_preference = command.choice;
+        settingsStore.value = { ...settingsStore.value };
+        saveSettingsDebounced();
+        applyTheme();
+        break;
+      case "colorTheme":
+        settingsStore.value.color_theme = command.id;
+        settingsStore.value = { ...settingsStore.value };
+        saveSettingsDebounced();
+        applyTheme();
+        break;
+      case "git":
+        await executeGit(command.command);
+        break;
+      case "find":
+        openFindReplace(command.query || undefined);
+        break;
+      case "tag":
+        dockLayoutRegistry.api?.ensurePanelOpen("tags");
+        if (command.query) requestTagFilter(command.query);
+        break;
+      case "toggleSpellCheck":
+        runShortcutAction("toggle_spell_check");
+        break;
+      case "daily":
+        openDailyNote();
+        break;
+    }
+  }
+
+  async function run() {
+    const result = parseCommand(input);
+    if (!result.ok) {
+      error = result.error;
+      return;
+    }
+    error = null;
+    await execute(result.command);
     onClose();
+  }
+
+  function acceptSuggestion(suggestion: string) {
+    input = applyCompletion(input, suggestion);
+    selected = 0;
+    error = null;
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -29,24 +185,16 @@
       onClose();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      selected = Math.min(selected + 1, results.length - 1);
+      if (suggestions.length) selected = (selected + 1) % suggestions.length;
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      selected = Math.max(selected - 1, 0);
-    } else if (e.key === "Enter" && results[selected]) {
-      run(results[selected].id);
+      if (suggestions.length) selected = (selected - 1 + suggestions.length) % suggestions.length;
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      if (suggestions.length) acceptSuggestion(suggestions[Math.min(selected, suggestions.length - 1)]);
+    } else if (e.key === "Enter") {
+      run();
     }
-  }
-
-  function comboLabel(actionId: string): string {
-    const action = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
-    if (!action) return "";
-    const combo = effectiveCombo(action);
-    if (!combo || combo.key === "") return "";
-    const mod = combo.ctrl_or_cmd ? "Ctrl+" : "";
-    const alt = combo.alt ? "Alt+" : "";
-    const shift = combo.shift ? "Shift+" : "";
-    return `${mod}${alt}${shift}${combo.key.toUpperCase()}`;
   }
 </script>
 
@@ -59,27 +207,32 @@
     aria-modal="true"
     tabindex="-1"
   >
-    <!-- svelte-ignore a11y_autofocus -->
-    <input
-      type="text"
-      placeholder="Type a command…"
-      bind:value={query}
-      oninput={() => (selected = 0)}
-      autofocus
-    />
-    <ul>
-      {#each results as action, i (action.id)}
-        <li>
-          <button class:selected={i === selected} onclick={() => run(action.id)}>
-            <span>{action.label}</span>
-            <span class="shortcut">{comboLabel(action.id)}</span>
+    <div class="input-row">
+      <span class="colon">:</span>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        type="text"
+        placeholder="write, open <title>, theme <name>, git commit, tag <name>, ..."
+        bind:value={input}
+        oninput={() => {
+          selected = 0;
+          error = null;
+        }}
+        autofocus
+      />
+    </div>
+    {#if error}
+      <p class="error">{error}</p>
+    {/if}
+    {#if suggestions.length}
+      <div class="suggestions">
+        {#each suggestions as suggestion, i (suggestion)}
+          <button class:selected={i === selected} onclick={() => acceptSuggestion(suggestion)}>
+            {suggestion}
           </button>
-        </li>
-      {/each}
-      {#if results.length === 0}
-        <li class="empty">No matching command</li>
-      {/if}
-    </ul>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -98,7 +251,6 @@
   .palette {
     width: 32rem;
     max-width: 90vw;
-    max-height: 60vh;
     background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
@@ -107,10 +259,22 @@
     overflow: hidden;
   }
 
-  input {
+  .input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
     padding: 0.6rem 0.8rem;
-    border: none;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .colon {
+    color: var(--color-fg-muted);
+    font-weight: bold;
+  }
+
+  input {
+    flex: 1;
+    border: none;
     font-size: 0.95rem;
   }
 
@@ -118,37 +282,31 @@
     outline: none;
   }
 
-  ul {
-    list-style: none;
+  .error {
     margin: 0;
-    padding: 0.25rem 0;
-    overflow: auto;
-  }
-
-  button {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    background: none;
-    border: none;
-    text-align: left;
     padding: 0.4rem 0.8rem;
-    cursor: pointer;
-    font-size: 0.85rem;
+    color: var(--color-danger);
+    font-size: 0.8rem;
   }
 
-  button.selected {
-    background: var(--color-selected-bg);
-  }
-
-  .shortcut {
-    color: var(--color-fg-muted);
-    font-size: 0.75rem;
-  }
-
-  .empty {
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
     padding: 0.5rem 0.8rem;
-    color: var(--color-fg-muted);
-    font-size: 0.85rem;
+  }
+
+  .suggestions button {
+    background: var(--color-selected-bg);
+    border: none;
+    border-radius: 999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+
+  .suggestions button.selected {
+    background: var(--color-accent);
+    color: white;
   }
 </style>

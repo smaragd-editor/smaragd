@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import { project, openDocument } from "../stores/project.svelte";
+  import { tagsRequest, consumeTagsRequest } from "../stores/tagsRequest.svelte";
 
   type TagGroup = { tag: string; documents: [string, string][] };
 
@@ -11,6 +12,16 @@
   let error = $state<string | null>(null);
 
   onMount(refreshTags);
+
+  // Picks up a pending `:tag <name>` command-prompt request, if any — also
+  // runs for a request made *after* this panel is already open and mounted
+  // (e.g. the dock tab was already showing), since metadataSelection-style
+  // $state is reactive.
+  $effect(() => {
+    if (tagsRequest.tag !== null) {
+      selectTag(consumeTagsRequest()!);
+    }
+  });
 
   async function refreshTags() {
     try {

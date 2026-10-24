@@ -7,6 +7,7 @@
 // svelte.ts already uses, just for an imperative API instead of data.
 type DockLayoutApi = {
   openPanel: (id: string) => void;
+  ensurePanelOpen: (id: string) => void;
   resetLayout: () => void;
   listSavedLayouts: () => string[];
   saveCurrentLayoutAs: (name: string) => void;

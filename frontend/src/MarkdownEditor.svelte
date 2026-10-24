@@ -12,7 +12,7 @@
   import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
   import { markdown } from "@codemirror/lang-markdown";
   import { languages } from "@codemirror/language-data";
-  import { search, openSearchPanel } from "@codemirror/search";
+  import { search, openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
 
   // Phase 3 proof-of-concept: CodeMirror 6 in place of the plain <textarea>
   // from Phase 2. This is the highest-risk phase in the migration plan — the
@@ -95,8 +95,12 @@
   // Ctrl+H) — Find and Replace is dispatched through this app's own
   // shortcuts.ts/MenuBar instead, one consistent place every action goes
   // through rather than two parallel keybinding systems.
-  export function openFindReplace() {
-    if (view) openSearchPanel(view);
+  export function openFindReplace(prefill?: string) {
+    if (!view) return;
+    if (prefill) {
+      view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: prefill })) });
+    }
+    openSearchPanel(view);
   }
 
   // Backs Spell Check — `ranges` are already-converted UTF-16 positions
