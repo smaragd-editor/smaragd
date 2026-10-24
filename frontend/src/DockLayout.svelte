@@ -6,6 +6,8 @@
     themeDark,
     type DockviewApi,
     type IContentRenderer,
+    type IDockviewPanel,
+    type Direction,
   } from "dockview-core";
   // Self-injects dockview's default (styled) CSS as a <style> tag on import —
   // this build ships styled/.noStyle pairs rather than a separate stylesheet
@@ -88,6 +90,86 @@
     persist();
   }
 
+  // Where a panel was (relative to some other panel still in the layout)
+  // the moment it was last closed via the toggle below — reapplied on
+  // reopen so "toggle a panel off, then back on" restores it rather than
+  // dumping it as a new tab in whatever group happens to be active, which
+  // is dockview's own default placement for an addPanel() with no
+  // `position`. Captured fresh every close, so it tracks wherever the user
+  // last dragged the panel to, not just its original defaultLayout() spot.
+  const rememberedPositions: Record<string, { referencePanel: string; direction: Direction; index?: number }> =
+    {};
+
+  function rememberPositionBeforeClose(panel: IDockviewPanel) {
+    if (!api) return;
+    const group = panel.group;
+    const groupSiblings = group.panels.filter((p) => p.id !== panel.id);
+    if (groupSiblings.length > 0) {
+      // Tabbed together with at least one other panel — reopen as a tab in
+      // the same group, at the same index among its tabs.
+      const index = group.panels.findIndex((p) => p.id === panel.id);
+      rememberedPositions[panel.id] = { referencePanel: groupSiblings[0].id, direction: "within", index };
+      return;
+    }
+    // Alone in its own group (the common case for a column like Editor/
+    // Binder/Preview) — find whichever other group's rendered bounding box
+    // is the closest neighbor along an edge, and remember which side this
+    // one was on, so addPanel's own `direction` (relative to that
+    // neighbor) can place it right back there.
+    const myRect = group.element.getBoundingClientRect();
+    let best: { panelId: string; direction: Direction; gap: number } | undefined;
+    for (const other of api.panels) {
+      if (other.id === panel.id || other.group.id === group.id) continue;
+      const rect = other.group.element.getBoundingClientRect();
+      const verticalOverlap = Math.min(myRect.bottom, rect.bottom) - Math.max(myRect.top, rect.top);
+      const horizontalOverlap = Math.min(myRect.right, rect.right) - Math.max(myRect.left, rect.left);
+      let direction: Direction | undefined;
+      let gap: number | undefined;
+      if (verticalOverlap > Math.min(myRect.height, rect.height) * 0.5) {
+        // Roughly the same row — side by side.
+        if (rect.left >= myRect.right - 1) {
+          direction = "right";
+          gap = rect.left - myRect.right;
+        } else if (myRect.left >= rect.right - 1) {
+          direction = "left";
+          gap = myRect.left - rect.right;
+        }
+      } else if (horizontalOverlap > Math.min(myRect.width, rect.width) * 0.5) {
+        // Roughly the same column — stacked.
+        if (rect.top >= myRect.bottom - 1) {
+          direction = "below";
+          gap = rect.top - myRect.bottom;
+        } else if (myRect.top >= rect.bottom - 1) {
+          direction = "above";
+          gap = myRect.top - rect.bottom;
+        }
+      }
+      if (direction !== undefined && gap !== undefined && (!best || gap < best.gap)) {
+        best = { panelId: other.id, direction, gap };
+      }
+    }
+    if (best) {
+      rememberedPositions[panel.id] = { referencePanel: best.panelId, direction: best.direction };
+    } else {
+      delete rememberedPositions[panel.id];
+    }
+  }
+
+  function addPanelAtRememberedPosition(id: string) {
+    if (!api) return;
+    const remembered = rememberedPositions[id];
+    if (remembered && api.getPanel(remembered.referencePanel)) {
+      api.addPanel({
+        id,
+        component: id,
+        title: PANEL_TITLES[id] ?? id,
+        position: { referencePanel: remembered.referencePanel, direction: remembered.direction, index: remembered.index },
+      });
+      return;
+    }
+    api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
+  }
+
   // A real toggle: clicking an already-*active* panel's button closes it;
   // clicking an open-but-inactive one (e.g. buried behind another tab in
   // the same group) just brings it to front, same as before — closing that
@@ -101,13 +183,14 @@
     const existing = api.getPanel(id);
     if (existing) {
       if (existing.api.isActive) {
+        rememberPositionBeforeClose(existing);
         existing.api.close();
       } else {
         existing.api.setActive();
       }
       return;
     }
-    api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
+    addPanelAtRememberedPosition(id);
   }
 
   // Unlike openPanel, never closes an already-open-and-active panel — for
@@ -121,7 +204,7 @@
       existing.api.setActive();
       return;
     }
-    api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
+    addPanelAtRememberedPosition(id);
   }
 
   function persist() {
