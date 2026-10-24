@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
@@ -90,8 +90,15 @@
   }
 
   function run(action: () => void) {
+    const menuId = openMenu;
     action();
     close();
+    // Returns focus to the triggering menu-label after an item is
+    // activated — otherwise, since the activated `.item` button (and the
+    // whole dropdown) unmounts immediately, a keyboard user's focus would
+    // silently fall back to the document body.
+    const idx = menus.findIndex((m) => m.id === menuId);
+    if (idx !== -1) menuLabelRefs[idx]?.focus();
   }
 
   // Theme/Color Binder By's flyouts need `position: fixed` with a
@@ -110,10 +117,14 @@
   // flickering shut mid-move, same trick native menus use.
   let submenuCloseTimer: ReturnType<typeof setTimeout> | undefined;
 
-  function openSubmenu(e: MouseEvent, index: number) {
+  function openSubmenuAt(index: number, el: HTMLElement) {
     clearTimeout(submenuCloseTimer);
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     submenuTrigger = { index, top: rect.top, left: rect.right };
+  }
+
+  function openSubmenu(e: MouseEvent, index: number) {
+    openSubmenuAt(index, e.currentTarget as HTMLElement);
   }
 
   function scheduleCloseSubmenu() {
@@ -130,6 +141,169 @@
   function closeSubmenu() {
     clearTimeout(submenuCloseTimer);
     submenuTrigger = null;
+  }
+
+  // Keyboard navigation: a roving-tabindex menubar (only `activeMenuIndex`'s
+  // label is Tab-reachable; arrow keys move real DOM focus between labels
+  // and, once a dropdown/submenu is open, between its own items) rather than
+  // a state-tracked "highlighted index" — real focus means Enter/Space on an
+  // `.item` button already fires its onclick for free, and a screen reader
+  // follows along without extra aria-activedescendant plumbing.
+  let menuLabelRefs: (HTMLButtonElement | null)[] = [];
+  let dropdownEl = $state<HTMLDivElement | undefined>();
+  let submenuEl = $state<HTMLDivElement | undefined>();
+  let activeMenuIndex = $state(0);
+
+  // Only the two levels this menu actually has (`.dropdown`'s direct
+  // children, `.submenu`'s direct children) — `:scope >` keeps this from
+  // also matching a nested-open submenu's own `.item`s when called on the
+  // dropdown that contains it.
+  function scopedFocusables(container: HTMLElement | undefined): HTMLElement[] {
+    if (!container) return [];
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(":scope > .item:not(:disabled), :scope > .submenu-trigger"),
+    );
+  }
+
+  function focusFirst(container: HTMLElement | undefined) {
+    scopedFocusables(container)[0]?.focus();
+  }
+
+  function focusLast(container: HTMLElement | undefined) {
+    const els = scopedFocusables(container);
+    els[els.length - 1]?.focus();
+  }
+
+  function focusDelta(container: HTMLElement | undefined, delta: number) {
+    const els = scopedFocusables(container);
+    if (els.length === 0) return;
+    const current = els.indexOf(document.activeElement as HTMLElement);
+    const next = current === -1 ? (delta > 0 ? 0 : els.length - 1) : (current + delta + els.length) % els.length;
+    els[next]?.focus();
+  }
+
+  async function switchMenu(fromIndex: number, dir: 1 | -1, focusFirstItem: boolean) {
+    const next = (fromIndex + dir + menus.length) % menus.length;
+    menuLabelRefs[next]?.focus();
+    if (focusFirstItem) {
+      openMenu = menus[next].id;
+      await tick();
+      focusFirst(dropdownEl);
+    }
+  }
+
+  async function onMenuLabelKeydown(e: KeyboardEvent, index: number) {
+    switch (e.key) {
+      case "ArrowRight":
+      case "ArrowLeft":
+        e.preventDefault();
+        await switchMenu(index, e.key === "ArrowRight" ? 1 : -1, openMenu !== null);
+        break;
+      case "ArrowDown":
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        openMenu = menus[index].id;
+        await tick();
+        focusFirst(dropdownEl);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        openMenu = menus[index].id;
+        await tick();
+        focusLast(dropdownEl);
+        break;
+    }
+  }
+
+  async function onDropdownKeydown(e: KeyboardEvent, index: number) {
+    const active = document.activeElement as HTMLElement | null;
+    const isTrigger = active?.classList.contains("submenu-trigger") ?? false;
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        focusDelta(dropdownEl, 1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        focusDelta(dropdownEl, -1);
+        break;
+      case "Home":
+        e.preventDefault();
+        focusFirst(dropdownEl);
+        break;
+      case "End":
+        e.preventDefault();
+        focusLast(dropdownEl);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        if (isTrigger && active) {
+          openSubmenuAt(Number(active.dataset.index), active);
+          await tick();
+          focusFirst(submenuEl);
+        } else {
+          await switchMenu(index, 1, true);
+        }
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        await switchMenu(index, -1, true);
+        break;
+      case "Enter":
+      case " ":
+        if (isTrigger && active) {
+          e.preventDefault();
+          openSubmenuAt(Number(active.dataset.index), active);
+          await tick();
+          focusFirst(submenuEl);
+        }
+        break;
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        menuLabelRefs[index]?.focus();
+        break;
+      case "Tab":
+        close();
+        break;
+    }
+  }
+
+  function onSubmenuKeydown(e: KeyboardEvent, triggerIndex: number) {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        e.stopPropagation();
+        focusDelta(submenuEl, 1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        e.stopPropagation();
+        focusDelta(submenuEl, -1);
+        break;
+      case "Home":
+        e.preventDefault();
+        e.stopPropagation();
+        focusFirst(submenuEl);
+        break;
+      case "End":
+        e.preventDefault();
+        e.stopPropagation();
+        focusLast(submenuEl);
+        break;
+      case "ArrowLeft":
+      case "Escape":
+        e.preventDefault();
+        e.stopPropagation();
+        closeSubmenu();
+        dropdownEl?.querySelector<HTMLElement>(`[data-index="${triggerIndex}"]`)?.focus();
+        break;
+      case "Tab":
+        close();
+        break;
+    }
   }
 
   function dock(id: string) {
@@ -515,20 +689,41 @@
 <svelte:window onclick={handleWindowClick} onkeydown={(e) => e.key === "Escape" && close()} />
 
 <nav class="menu-bar">
-  {#each menus as menu (menu.id)}
+  {#each menus as menu, mi (menu.id)}
     <div class="menu">
-      <button class="menu-label" class:open={openMenu === menu.id} onclick={() => toggle(menu.id)}>
+      <button
+        class="menu-label"
+        role="menuitem"
+        aria-haspopup="true"
+        aria-expanded={openMenu === menu.id}
+        class:open={openMenu === menu.id}
+        tabindex={mi === activeMenuIndex ? 0 : -1}
+        bind:this={menuLabelRefs[mi]}
+        onclick={() => toggle(menu.id)}
+        onfocus={() => (activeMenuIndex = mi)}
+        onkeydown={(e) => onMenuLabelKeydown(e, mi)}
+      >
         {menu.label}
       </button>
       {#if openMenu === menu.id}
-        <div class="dropdown">
+        <div
+          class="dropdown"
+          role="menu"
+          tabindex="-1"
+          bind:this={dropdownEl}
+          onkeydown={(e) => onDropdownKeydown(e, mi)}
+        >
           {#each menu.items() as item, i (i)}
             {#if "separator" in item}
               <div class="separator"></div>
             {:else if "submenu" in item}
               <div
                 class="submenu-trigger"
-                role="presentation"
+                role="menuitem"
+                aria-haspopup="true"
+                aria-expanded={submenuTrigger?.index === i}
+                tabindex="-1"
+                data-index={i}
                 onmouseenter={(e) => openSubmenu(e, i)}
                 onmouseleave={scheduleCloseSubmenu}
               >
@@ -537,16 +732,25 @@
                 {#if submenuTrigger?.index === i}
                   <div
                     class="submenu"
-                    role="presentation"
+                    role="menu"
+                    tabindex="-1"
+                    bind:this={submenuEl}
                     style="top: {submenuTrigger.top}px; left: {submenuTrigger.left}px;"
                     onmouseenter={cancelCloseSubmenu}
                     onmouseleave={scheduleCloseSubmenu}
+                    onkeydown={(e) => onSubmenuKeydown(e, i)}
                   >
                     {#each item.submenu() as sub, j (j)}
                       {#if "separator" in sub}
                         <div class="separator"></div>
                       {:else if !("submenu" in sub)}
-                        <button class="item" disabled={sub.disabled} onclick={() => run(sub.action)}>
+                        <button
+                          class="item"
+                          role="menuitem"
+                          tabindex="-1"
+                          disabled={sub.disabled}
+                          onclick={() => run(sub.action)}
+                        >
                           <span class="label-group">
                             <span class="check">{sub.checked ? "●" : ""}</span>
                             <span>{sub.label}</span>
@@ -561,7 +765,13 @@
                 {/if}
               </div>
             {:else}
-              <button class="item" disabled={item.disabled} onclick={() => run(item.action)}>
+              <button
+                class="item"
+                role="menuitem"
+                tabindex="-1"
+                disabled={item.disabled}
+                onclick={() => run(item.action)}
+              >
                 <span>{item.label}</span>
                 {#if item.shortcutId}
                   <span class="shortcut">{shortcutLabel(item.shortcutId) ?? ""}</span>
@@ -648,6 +858,11 @@
     color: white;
   }
 
+  .menu-label:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+  }
+
   .dropdown {
     position: absolute;
     top: 100%;
@@ -675,8 +890,10 @@
     white-space: nowrap;
   }
 
-  .item:hover:not(:disabled) {
+  .item:hover:not(:disabled),
+  .item:focus:not(:disabled) {
     background: var(--color-selected-bg);
+    outline: none;
   }
 
   .item:disabled {
@@ -722,8 +939,10 @@
     cursor: default;
   }
 
-  .submenu-trigger:hover {
+  .submenu-trigger:hover,
+  .submenu-trigger:focus {
     background: var(--color-selected-bg);
+    outline: none;
   }
 
   .submenu-trigger .arrow {
