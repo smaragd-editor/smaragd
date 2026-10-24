@@ -16,6 +16,8 @@ use smaragd_core::project::Project;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
 use smaragd_core::project::{BinderColorMode, FolderRole, PicklistField};
 
+use crate::panels::DocumentMetaInput;
+
 fn load(root: &str) -> Result<Project, String> {
     Project::load_from_folder(Path::new(root)).map_err(|e| e.to_string())
 }
@@ -96,6 +98,53 @@ pub fn picklist_options(root: String) -> Result<PicklistOptionsDto, String> {
         statuses: titles(PicklistField::Status),
         povs: titles(PicklistField::Pov),
     })
+}
+
+/// A folder's own metadata — `ui::metadata_panel::show_folder`, shown by
+/// this port's Metadata panel when a non-root Binder folder row is
+/// selected (see `stores/metadataSelection.svelte.ts`), same as the real
+/// app's `BinderEvent::SelectFolder`. No word-count/inline-tags fields
+/// (unlike a document's `DocumentMetaDto`): a folder has no single open
+/// buffer for either to be computed from.
+#[derive(Serialize)]
+pub struct FolderMetaDto {
+    section_type: Option<String>,
+    status: Option<String>,
+    pov: Option<String>,
+    word_count_target: Option<u32>,
+    tags: Vec<String>,
+}
+
+#[tauri::command]
+pub fn folder_metadata(root: String, path: String) -> Result<FolderMetaDto, String> {
+    let project = load(&root)?;
+    let meta = project.folder_meta(Path::new(&path));
+    Ok(FolderMetaDto {
+        section_type: meta.section_type,
+        status: meta.status,
+        pov: meta.pov,
+        word_count_target: meta.word_count_target,
+        tags: meta.tags,
+    })
+}
+
+#[tauri::command]
+pub fn set_folder_metadata(
+    root: String,
+    path: String,
+    meta: DocumentMetaInput,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    let meta = smaragd_core::frontmatter::DocumentMeta {
+        section_type: meta.section_type,
+        status: meta.status,
+        pov: meta.pov,
+        word_count_target: meta.word_count_target,
+        tags: meta.tags,
+    };
+    project
+        .set_folder_meta(Path::new(&path), meta)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

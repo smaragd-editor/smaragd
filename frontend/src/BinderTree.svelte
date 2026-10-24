@@ -15,6 +15,11 @@
   import { showToast } from "./stores/toast.svelte";
   import { requestExport } from "./stores/exportRequest.svelte";
   import { showPrompt, showConfirm } from "./stores/promptDialog.svelte";
+  import {
+    metadataSelection,
+    selectFolderMetadata,
+    selectProjectMetadata,
+  } from "./stores/metadataSelection.svelte";
 
   const colorModeLabels: Record<string, string> = {
     Off: "Off",
@@ -60,6 +65,23 @@
 
   let error = $state<string | null>(null);
   let dragOverPath = $state<string | null>(null);
+
+  // A folder/project-root row click selects it for the Metadata panel
+  // (matching the real app's own BinderEvent::SelectFolder/SelectProject)
+  // without expanding/collapsing it — <summary>'s own native click
+  // behavior does that, so this only runs on the name label itself and
+  // calls preventDefault() to suppress that default action for this click.
+  function selectFolderRowForMetadata(e: Event, n: BinderNodeDto) {
+    e.preventDefault();
+    if (n.path === root) selectProjectMetadata();
+    else selectFolderMetadata(n.path);
+  }
+
+  function isMetadataSelected(n: BinderNodeDto): boolean {
+    const sel = metadataSelection.value;
+    if (n.path === root) return sel.kind === "project";
+    return sel.kind === "folder" && sel.path === n.path;
+  }
 
   // Daily Notes' folder setting (project_settings.rs's `daily_notes_folder`)
   // is a strftime pattern — e.g. "Journal/%Y/%m" nests notes under a
@@ -322,7 +344,18 @@
         {:else if n.path === dailyNotesFolderPath}
           <span class="role-icon" title="Daily Notes">📔</span>
         {/if}
-        <span class="name">{n.name}</span>
+        <span
+          class="name"
+          class:selected={isMetadataSelected(n)}
+          role="button"
+          tabindex="-1"
+          onclick={(e) => selectFolderRowForMetadata(e, n)}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') selectFolderRowForMetadata(e, n);
+          }}
+        >
+          {n.name}
+        </span>
         <span class="actions">
           <button title="New document" onclick={() => newDocument(n.path)}>+file</button>
           <button title="New folder" onclick={() => newFolder(n.path)}>+folder</button>
@@ -590,6 +623,11 @@
 
   summary .name {
     flex: 1;
+    border-radius: 3px;
+  }
+
+  summary .name.selected {
+    background: var(--color-selected-bg);
   }
 
   summary::-webkit-details-marker {

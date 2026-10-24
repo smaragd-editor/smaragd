@@ -193,6 +193,79 @@ fn project_summary(project: &Project) -> ProjectSummary {
     }
 }
 
+/// The fields `ui::metadata_panel::show_project` renders — shown by this
+/// port's Metadata panel when the Binder's project-root row is selected
+/// (see `stores/metadataSelection.svelte.ts`), same as the real app's
+/// `BinderEvent::SelectProject`.
+#[derive(Serialize)]
+pub struct ProjectMetaFieldsDto {
+    book_title: Option<String>,
+    book_subtitle: Option<String>,
+    book_author: Option<String>,
+    point: String,
+    logline: String,
+    what_if: String,
+    synopsis: String,
+}
+
+#[tauri::command]
+pub fn project_meta_fields(root: String) -> Result<ProjectMetaFieldsDto, String> {
+    let project = load(&root)?;
+    Ok(ProjectMetaFieldsDto {
+        book_title: project.meta.book_title.clone(),
+        book_subtitle: project.meta.book_subtitle.clone(),
+        book_author: project.meta.book_author.clone(),
+        point: project.meta.point.clone(),
+        logline: project.meta.logline.clone(),
+        what_if: project.meta.what_if.clone(),
+        synopsis: project.meta.synopsis.clone(),
+    })
+}
+
+#[tauri::command]
+pub fn set_book_title(root: String, title: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_book_title(title).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_book_subtitle(root: String, subtitle: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_book_subtitle(subtitle)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_book_author(root: String, author: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_book_author(author).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_project_point(root: String, point: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_point(point).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_project_logline(root: String, logline: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_logline(logline).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_project_what_if(root: String, what_if: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_what_if(what_if).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_project_synopsis(root: String, synopsis: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_synopsis(synopsis).map_err(|e| e.to_string())
+}
+
 fn global_settings() -> Settings {
     smaragd_core::settings::config_file_path()
         .map(|path| Settings::load_from_path(&NativeStore, &path))

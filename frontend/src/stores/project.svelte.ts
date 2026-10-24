@@ -3,6 +3,7 @@ import { dockLayoutRegistry } from "./dockLayoutRegistry.svelte";
 import { showToast } from "./toast.svelte";
 import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
 import { showPrompt, showConfirm } from "./promptDialog.svelte";
+import { resetMetadataSelectionToDocument } from "./metadataSelection.svelte";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -153,6 +154,7 @@ export async function openDocument(path: string) {
     const text = await invoke<string>("document_read", { path });
     project.documentText = text;
     project.selectedPath = path;
+    resetMetadataSelectionToDocument();
     editorRef?.setDocument(text);
     schedulePreview();
     scheduleSpellCheck();

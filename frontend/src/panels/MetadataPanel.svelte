@@ -1,34 +1,41 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { project, applyDocumentMetaEdit } from "../stores/project.svelte";
+  import { metadataSelection } from "../stores/metadataSelection.svelte";
   import { showToast } from "../stores/toast.svelte";
 
-  // Matches the real app's metadata_panel.rs for a document's own
-  // frontmatter: Type/Status/POV (free text, or a dropdown when a picklist
-  // folder is assigned — Project::picklist_documents), a live word-count
-  // readout, a word-count target, and tags as removable chips with
-  // autocomplete (Project::all_tags) plus unremovable chips for #tags found
-  // in the body text but not in frontmatter. Status/POV each get a color
-  // swatch (ProjectMeta::status_colors/pov_colors, already wired for
-  // Project Settings — reused here). An "Other fields" section lists
-  // whatever YAML keys frontmatter::extra_fields finds that this form has
-  // no field for.
+  // Matches the real app's metadata_panel.rs, including the two variants it
+  // swaps in for `show` (a document's own frontmatter) depending on what's
+  // selected in the Binder (stores/metadataSelection.svelte.ts, driven by
+  // BinderTree.svelte's folder/root-row clicks — see that store's own doc
+  // comment): `show_folder` (a folder's own small Type/Status/POV/Tags set,
+  // no word count or inline tags — no single open buffer for either) and
+  // `show_project` (the project-wide Title/Subtitle/Author/Point/Logline/
+  // What if/Synopsis fields).
   //
-  // Not ported: the real panel also renders in place of this one for a
-  // selected *folder* (its own small Type/Status/POV/tags set — show_folder)
-  // or the *project root* (Title/Subtitle/Author/Point/Logline/What
-  // if/Synopsis — show_project) when the Binder's own folder/project row is
-  // selected. This port's Binder has no such selection at all — only ever a
-  // single open *document* (project.selectedPath) — so there's no trigger
-  // for either variant to key off without first adding folder/project
-  // selection to the Binder itself, a separate, larger change.
+  // Document/Folder share the same Type/Status/POV (free text, or a
+  // dropdown when a picklist folder is assigned — Project::picklist_documents)
+  // plus Tags (removable chips, comma/Enter-to-commit, autocomplete via
+  // Project::all_tags) shape — the fieldRow/tagsEditor snippets below are
+  // this port's equivalent of the real app's shared metadata_fields_grid/
+  // tags_chip_editor, parameterized the same way. Status/POV each get a
+  // color swatch (ProjectMeta::status_colors/pov_colors, reusing the
+  // commands Project Settings already has). The document form additionally
+  // shows a live word count, unremovable chips for #tags found in the body
+  // text but not in frontmatter, and a read-only "Other fields" section for
+  // YAML keys none of this has a field for.
   //
-  // Writing back: frontmatter_write_back/document_metadata are pure text-
+  // Writing back: document_metadata/frontmatter_write_back are pure text-
   // in/text-out (like render_markdown), operating on project.documentText
-  // directly rather than disk — see stores/project.svelte.ts's
-  // applyDocumentMetaEdit for why. Free-text fields commit on blur/Enter
-  // rather than per-keystroke (the real app's egui form re-diffs every
-  // frame) — simpler, and avoids a round trip on every character typed.
+  // directly rather than disk (stores/project.svelte.ts's
+  // applyDocumentMetaEdit) — the folder/project forms go through
+  // set_folder_metadata/set_book_title/etc. instead, each a thin wrapper
+  // around an existing core::project::Project setter. Free-text fields
+  // commit on blur (the real app's egui form re-diffs every frame) —
+  // simpler, and avoids a round trip on every character typed. Logline/
+  // What if/Synopsis are plain fixed-row <textarea>s rather than the real
+  // app's three-way-split-remaining-height layout (`show_project`'s own
+  // `project_text_area` math) — not worth reproducing pixel for pixel here.
   type DocumentMetaDto = {
     section_type: string | null;
     status: string | null;
@@ -40,56 +47,33 @@
     extra_fields: [string, string][];
   };
 
+  type FolderMetaDto = {
+    section_type: string | null;
+    status: string | null;
+    pov: string | null;
+    word_count_target: number | null;
+    tags: string[];
+  };
+
+  type ProjectMetaFieldsDto = {
+    book_title: string | null;
+    book_subtitle: string | null;
+    book_author: string | null;
+    point: string;
+    logline: string;
+    what_if: string;
+    synopsis: string;
+  };
+
   type PicklistOptions = { types: string[]; statuses: string[]; povs: string[] };
 
-  let meta = $state<DocumentMetaDto | null>(null);
-  let error = $state<string | null>(null);
+  const DEFAULT_SWATCH = "#888888";
+
+  // --- Shared across Document/Folder: picklist options, colors, tags -----
   let picklists = $state<PicklistOptions>({ types: [], statuses: [], povs: [] });
   let statusColors = $state<Record<string, string>>({});
   let povColors = $state<Record<string, string>>({});
   let knownTags = $state<string[]>([]);
-
-  let sectionType = $state("");
-  let status = $state("");
-  let pov = $state("");
-  let wordCountTargetText = $state("");
-  let tags = $state<string[]>([]);
-  let tagInput = $state("");
-
-  let lastSyncedPath: string | null = null;
-
-  // Re-parses on every project.documentText change (debounced) so the live
-  // word count / inline-tags stay current while typing in the editor, but
-  // only resets the editable draft fields when the *open document* itself
-  // changed — otherwise this panel's own in-progress typing would get
-  // overwritten by the round trip its own edit just triggered.
-  let metaFetchTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const path = project.selectedPath;
-    const text = project.documentText;
-    clearTimeout(metaFetchTimer);
-    if (!path) {
-      meta = null;
-      return;
-    }
-    metaFetchTimer = setTimeout(async () => {
-      try {
-        const result = await invoke<DocumentMetaDto>("document_metadata", { contents: text });
-        meta = result;
-        if (path !== lastSyncedPath) {
-          lastSyncedPath = path;
-          sectionType = result.section_type ?? "";
-          status = result.status ?? "";
-          pov = result.pov ?? "";
-          wordCountTargetText = result.word_count_target?.toString() ?? "";
-          tags = result.tags;
-          tagInput = "";
-        }
-      } catch (err) {
-        error = String(err);
-      }
-    }, 200);
-  });
 
   $effect(() => {
     const root = project.value?.root;
@@ -111,67 +95,30 @@
       .catch(() => {});
   });
 
-  function parsedWordCountTarget(): number | null {
-    const trimmed = wordCountTargetText.trim();
+  function parsedWordCountTarget(text: string): number | null {
+    const trimmed = text.trim();
     if (trimmed === "") return null;
     const n = Number(trimmed);
     return Number.isInteger(n) && n >= 0 ? n : null;
   }
 
-  async function commitMeta() {
-    if (!project.value) return;
-    try {
-      const newContents = await invoke<string>("frontmatter_write_back", {
-        contents: project.documentText,
-        meta: {
-          section_type: sectionType.trim() || null,
-          status: status.trim() || null,
-          pov: pov.trim() || null,
-          word_count_target: parsedWordCountTarget(),
-          tags,
-        },
-      });
-      applyDocumentMetaEdit(newContents);
-    } catch (err) {
-      showToast(String(err));
-    }
-  }
-
-  function addTag(candidate: string) {
-    const trimmed = candidate.trim();
-    tagInput = "";
-    if (!trimmed) return;
-    if (tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) return;
-    tags = [...tags, trimmed];
-    commitMeta();
-  }
-
-  function removeTag(index: number) {
-    tags = tags.filter((_, i) => i !== index);
-    commitMeta();
-  }
-
-  function onTagInputChange() {
-    if (!tagInput.includes(",")) return;
-    const parts = tagInput.split(",");
+  /** Splits any complete (comma-terminated) tags out of `input` — the typed-
+   * comma-commits-everything-before-it behavior `tags_chip_editor` has, so
+   * pasting "foo, bar, baz" produces three chips, not one long tag. */
+  function splitCompleteTags(tags: string[], input: string): { tags: string[]; remainder: string } {
+    if (!input.includes(",")) return { tags, remainder: input };
+    const parts = input.split(",");
     const remainder = parts.pop() ?? "";
-    let changed = false;
-    for (const part of parts) {
-      const trimmed = part.trim();
-      if (trimmed && !tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
-        tags = [...tags, trimmed];
-        changed = true;
-      }
-    }
-    tagInput = remainder;
-    if (changed) commitMeta();
+    let next = tags;
+    for (const part of parts) next = appendTag(next, part);
+    return { tags: next, remainder };
   }
 
-  function onTagInputKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addTag(tagInput);
-    }
+  function appendTag(tags: string[], candidate: string): string[] {
+    const trimmed = candidate.trim();
+    if (!trimmed) return tags;
+    if (tags.some((t) => t.toLowerCase() === trimmed.toLowerCase())) return tags;
+    return [...tags, trimmed];
   }
 
   // Mirrors the real app's autocomplete::filter_candidates: prefix matches
@@ -190,17 +137,11 @@
     return [...startsWith, ...contains];
   }
 
-  const tagSuggestions = $derived(
-    tagInput.trim() ? filterCandidates(knownTags, tagInput.trim()).slice(0, 8) : [],
-  );
+  function tagSuggestionsFor(tagInput: string): string[] {
+    return tagInput.trim() ? filterCandidates(knownTags, tagInput.trim()).slice(0, 8) : [];
+  }
 
-  const inlineOnlyTags = $derived(
-    (meta?.inline_tags ?? []).filter(
-      (tag) => !tags.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
-    ),
-  );
-
-  async function setStatusColor(hex: string) {
+  async function setStatusColor(status: string, hex: string) {
     if (!project.value) return;
     const key = status.trim();
     if (!key) return;
@@ -212,7 +153,7 @@
     }
   }
 
-  async function setPovColor(hex: string) {
+  async function setPovColor(pov: string, hex: string) {
     if (!project.value) return;
     const key = pov.trim();
     if (!key) return;
@@ -224,124 +165,481 @@
     }
   }
 
-  const DEFAULT_SWATCH = "#888888";
+  // --- Document form -------------------------------------------------------
+  let docMeta = $state<DocumentMetaDto | null>(null);
+  let docError = $state<string | null>(null);
+  let docSectionType = $state("");
+  let docStatus = $state("");
+  let docPov = $state("");
+  let docWordCountTargetText = $state("");
+  let docTags = $state<string[]>([]);
+  let docTagInput = $state("");
+  let lastSyncedDocPath: string | null = null;
+
+  // Re-parses on every project.documentText change (debounced) so the live
+  // word count / inline-tags stay current while typing in the editor, but
+  // only resets the editable draft fields when the *open document* itself
+  // changed — otherwise this panel's own in-progress typing would get
+  // overwritten by the round trip its own edit just triggered.
+  let docMetaFetchTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    if (metadataSelection.value.kind !== "document") return;
+    const path = project.selectedPath;
+    const text = project.documentText;
+    clearTimeout(docMetaFetchTimer);
+    if (!path) {
+      docMeta = null;
+      return;
+    }
+    docMetaFetchTimer = setTimeout(async () => {
+      try {
+        const result = await invoke<DocumentMetaDto>("document_metadata", { contents: text });
+        docMeta = result;
+        if (path !== lastSyncedDocPath) {
+          lastSyncedDocPath = path;
+          docSectionType = result.section_type ?? "";
+          docStatus = result.status ?? "";
+          docPov = result.pov ?? "";
+          docWordCountTargetText = result.word_count_target?.toString() ?? "";
+          docTags = result.tags;
+          docTagInput = "";
+        }
+      } catch (err) {
+        docError = String(err);
+      }
+    }, 200);
+  });
+
+  async function commitDocumentMeta() {
+    if (!project.value) return;
+    try {
+      const newContents = await invoke<string>("frontmatter_write_back", {
+        contents: project.documentText,
+        meta: {
+          section_type: docSectionType.trim() || null,
+          status: docStatus.trim() || null,
+          pov: docPov.trim() || null,
+          word_count_target: parsedWordCountTarget(docWordCountTargetText),
+          tags: docTags,
+        },
+      });
+      applyDocumentMetaEdit(newContents);
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  function docOnTagInputChange(value: string) {
+    docTagInput = value;
+    const { tags: next, remainder } = splitCompleteTags(docTags, docTagInput);
+    docTagInput = remainder;
+    if (next !== docTags) {
+      docTags = next;
+      commitDocumentMeta();
+    }
+  }
+
+  function docAddTag(candidate: string) {
+    const next = appendTag(docTags, candidate);
+    docTagInput = "";
+    if (next !== docTags) {
+      docTags = next;
+      commitDocumentMeta();
+    }
+  }
+
+  function docRemoveTag(index: number) {
+    docTags = docTags.filter((_, i) => i !== index);
+    commitDocumentMeta();
+  }
+
+  const docInlineOnlyTags = $derived(
+    (docMeta?.inline_tags ?? []).filter(
+      (tag) => !docTags.some((existing) => existing.toLowerCase() === tag.toLowerCase()),
+    ),
+  );
+
+  // --- Folder form -----------------------------------------------------
+  let folderMeta = $state<FolderMetaDto | null>(null);
+  let folderError = $state<string | null>(null);
+  let folderSectionType = $state("");
+  let folderStatus = $state("");
+  let folderPov = $state("");
+  let folderWordCountTargetText = $state("");
+  let folderTags = $state<string[]>([]);
+  let folderTagInput = $state("");
+  let lastSyncedFolderPath: string | null = null;
+
+  $effect(() => {
+    const sel = metadataSelection.value;
+    if (sel.kind !== "folder") return;
+    const root = project.value?.root;
+    if (!root) return;
+    invoke<FolderMetaDto>("folder_metadata", { root, path: sel.path })
+      .then((result) => {
+        folderMeta = result;
+        if (sel.kind === "folder" && sel.path !== lastSyncedFolderPath) {
+          lastSyncedFolderPath = sel.path;
+          folderSectionType = result.section_type ?? "";
+          folderStatus = result.status ?? "";
+          folderPov = result.pov ?? "";
+          folderWordCountTargetText = result.word_count_target?.toString() ?? "";
+          folderTags = result.tags;
+          folderTagInput = "";
+        }
+      })
+      .catch((err) => (folderError = String(err)));
+  });
+
+  async function commitFolderMeta() {
+    const sel = metadataSelection.value;
+    if (!project.value || sel.kind !== "folder") return;
+    try {
+      await invoke("set_folder_metadata", {
+        root: project.value.root,
+        path: sel.path,
+        meta: {
+          section_type: folderSectionType.trim() || null,
+          status: folderStatus.trim() || null,
+          pov: folderPov.trim() || null,
+          word_count_target: parsedWordCountTarget(folderWordCountTargetText),
+          tags: folderTags,
+        },
+      });
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  function folderOnTagInputChange(value: string) {
+    folderTagInput = value;
+    const { tags: next, remainder } = splitCompleteTags(folderTags, folderTagInput);
+    folderTagInput = remainder;
+    if (next !== folderTags) {
+      folderTags = next;
+      commitFolderMeta();
+    }
+  }
+
+  function folderAddTag(candidate: string) {
+    const next = appendTag(folderTags, candidate);
+    folderTagInput = "";
+    if (next !== folderTags) {
+      folderTags = next;
+      commitFolderMeta();
+    }
+  }
+
+  function folderRemoveTag(index: number) {
+    folderTags = folderTags.filter((_, i) => i !== index);
+    commitFolderMeta();
+  }
+
+  // --- Project form ------------------------------------------------------
+  let projectMeta = $state<ProjectMetaFieldsDto | null>(null);
+  let projectError = $state<string | null>(null);
+  let bookTitle = $state("");
+  let bookSubtitle = $state("");
+  let bookAuthor = $state("");
+  let point = $state("");
+  let logline = $state("");
+  let whatIf = $state("");
+  let synopsis = $state("");
+  let lastSyncedProjectRoot: string | null = null;
+
+  $effect(() => {
+    if (metadataSelection.value.kind !== "project") return;
+    const root = project.value?.root;
+    if (!root) return;
+    invoke<ProjectMetaFieldsDto>("project_meta_fields", { root })
+      .then((result) => {
+        projectMeta = result;
+        if (root !== lastSyncedProjectRoot) {
+          lastSyncedProjectRoot = root;
+          bookTitle = result.book_title ?? "";
+          bookSubtitle = result.book_subtitle ?? "";
+          bookAuthor = result.book_author ?? "";
+          point = result.point;
+          logline = result.logline;
+          whatIf = result.what_if;
+          synopsis = result.synopsis;
+        }
+      })
+      .catch((err) => (projectError = String(err)));
+  });
+
+  async function commitProjectField(command: string, paramName: string, value: string) {
+    if (!project.value) return;
+    try {
+      await invoke(command, { root: project.value.root, [paramName]: value });
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
 </script>
 
-<div class="panel">
-  {#if !project.selectedPath}
-    <p class="empty">Select a document in the Binder.</p>
-  {:else if error}
-    <p class="error">{error}</p>
-  {:else if meta}
-    <div class="grid">
-      <label for="meta-type">Type:</label>
-      {#if picklists.types.length}
-        <select id="meta-type" bind:value={sectionType} onchange={commitMeta}>
-          <option value="">(none)</option>
-          {#each picklists.types as option (option)}
-            <option value={option}>{option}</option>
+{#snippet fieldRow(
+  idPrefix: string,
+  labelText: string,
+  value: string,
+  options: string[],
+  onChange: (v: string) => void,
+  colorValue: string | null,
+  onColorChange: ((hex: string) => void) | null,
+)}
+  <label for={idPrefix}>{labelText}:</label>
+  <div class="row-with-swatch">
+    {#if options.length}
+      <select id={idPrefix} value={value} onchange={(e) => onChange(e.currentTarget.value)}>
+        <option value="">(none)</option>
+        {#each options as option (option)}
+          <option value={option}>{option}</option>
+        {/each}
+      </select>
+    {:else}
+      <input id={idPrefix} type="text" value={value} onchange={(e) => onChange(e.currentTarget.value)} />
+    {/if}
+    {#if onColorChange}
+      <input
+        type="color"
+        value={colorValue ?? DEFAULT_SWATCH}
+        disabled={!value.trim()}
+        onchange={(e) => onColorChange(e.currentTarget.value)}
+      />
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet tagsEditor(
+  tags: string[],
+  tagInput: string,
+  inlineOnly: string[],
+  onInput: (v: string) => void,
+  onAdd: (candidate: string) => void,
+  onRemove: (index: number) => void,
+)}
+  <div class="tags-editor">
+    {#if tags.length}
+      <div class="chips">
+        {#each tags as tag, i (tag)}
+          <span class="chip">
+            #{tag}
+            <button type="button" class="chip-remove" onclick={() => onRemove(i)}>×</button>
+          </span>
+        {/each}
+      </div>
+    {/if}
+    {#if inlineOnly.length}
+      <div class="chips">
+        {#each inlineOnly as tag (tag)}
+          <span class="chip chip-inline" title="Found in the document text, not frontmatter">
+            #{tag}
+          </span>
+        {/each}
+      </div>
+    {/if}
+    <input
+      type="text"
+      placeholder="Add tag…"
+      value={tagInput}
+      oninput={(e) => onInput(e.currentTarget.value)}
+      onkeydown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onAdd(tagInput);
+        }
+      }}
+    />
+    {#if tagInput.trim()}
+      {@const suggestions = tagSuggestionsFor(tagInput)}
+      {#if suggestions.length}
+        <div class="chips">
+          {#each suggestions as suggestion (suggestion)}
+            <button type="button" class="suggestion" onclick={() => onAdd(suggestion)}>
+              {suggestion}
+            </button>
           {/each}
-        </select>
-      {:else}
-        <input id="meta-type" type="text" bind:value={sectionType} onchange={commitMeta} />
+        </div>
       {/if}
+    {/if}
+  </div>
+{/snippet}
 
-      <label for="meta-status">Status:</label>
-      <div class="row-with-swatch">
-        {#if picklists.statuses.length}
-          <select id="meta-status" bind:value={status} onchange={commitMeta}>
-            <option value="">(none)</option>
-            {#each picklists.statuses as option (option)}
-              <option value={option}>{option}</option>
-            {/each}
-          </select>
-        {:else}
-          <input id="meta-status" type="text" bind:value={status} onchange={commitMeta} />
-        {/if}
+<div class="panel">
+  {#if metadataSelection.value.kind === "project"}
+    <h3>Project</h3>
+    {#if projectError}
+      <p class="error">{projectError}</p>
+    {:else if projectMeta}
+      <div class="project-form">
+        <label for="meta-title">Title</label>
         <input
-          type="color"
-          value={statusColors[status.trim()] ?? DEFAULT_SWATCH}
-          disabled={!status.trim()}
-          onchange={(e) => setStatusColor(e.currentTarget.value)}
+          id="meta-title"
+          type="text"
+          bind:value={bookTitle}
+          onchange={() => commitProjectField("set_book_title", "title", bookTitle)}
         />
-      </div>
-
-      <label for="meta-pov">POV:</label>
-      <div class="row-with-swatch">
-        {#if picklists.povs.length}
-          <select id="meta-pov" bind:value={pov} onchange={commitMeta}>
-            <option value="">(none)</option>
-            {#each picklists.povs as option (option)}
-              <option value={option}>{option}</option>
-            {/each}
-          </select>
-        {:else}
-          <input id="meta-pov" type="text" bind:value={pov} onchange={commitMeta} />
-        {/if}
+        <label for="meta-subtitle">Subtitle</label>
         <input
-          type="color"
-          value={povColors[pov.trim()] ?? DEFAULT_SWATCH}
-          disabled={!pov.trim()}
-          onchange={(e) => setPovColor(e.currentTarget.value)}
+          id="meta-subtitle"
+          type="text"
+          bind:value={bookSubtitle}
+          onchange={() => commitProjectField("set_book_subtitle", "subtitle", bookSubtitle)}
         />
+        <label for="meta-author">Author</label>
+        <input
+          id="meta-author"
+          type="text"
+          bind:value={bookAuthor}
+          onchange={() => commitProjectField("set_book_author", "author", bookAuthor)}
+        />
+        <label for="meta-point">Point</label>
+        <input
+          id="meta-point"
+          type="text"
+          bind:value={point}
+          onchange={() => commitProjectField("set_project_point", "point", point)}
+        />
+        <label for="meta-logline">Logline</label>
+        <textarea
+          id="meta-logline"
+          rows="3"
+          bind:value={logline}
+          onchange={() => commitProjectField("set_project_logline", "logline", logline)}
+        ></textarea>
+        <label for="meta-what-if">What if</label>
+        <textarea
+          id="meta-what-if"
+          rows="3"
+          bind:value={whatIf}
+          onchange={() => commitProjectField("set_project_what_if", "what_if", whatIf)}
+        ></textarea>
+        <label for="meta-synopsis">Synopsis</label>
+        <textarea
+          id="meta-synopsis"
+          rows="6"
+          bind:value={synopsis}
+          onchange={() => commitProjectField("set_project_synopsis", "synopsis", synopsis)}
+        ></textarea>
       </div>
+    {/if}
+  {:else if metadataSelection.value.kind === "folder"}
+    <h3>Folder Metadata</h3>
+    {#if folderError}
+      <p class="error">{folderError}</p>
+    {:else if folderMeta}
+      <div class="grid">
+        {@render fieldRow(
+          "meta-folder-type",
+          "Type",
+          folderSectionType,
+          picklists.types,
+          (v) => {
+            folderSectionType = v;
+            commitFolderMeta();
+          },
+          null,
+          null,
+        )}
+        {@render fieldRow(
+          "meta-folder-status",
+          "Status",
+          folderStatus,
+          picklists.statuses,
+          (v) => {
+            folderStatus = v;
+            commitFolderMeta();
+          },
+          statusColors[folderStatus.trim()],
+          (hex) => setStatusColor(folderStatus, hex),
+        )}
+        {@render fieldRow(
+          "meta-folder-pov",
+          "POV",
+          folderPov,
+          picklists.povs,
+          (v) => {
+            folderPov = v;
+            commitFolderMeta();
+          },
+          povColors[folderPov.trim()],
+          (hex) => setPovColor(folderPov, hex),
+        )}
+        <label for="meta-folder-word-target">Word count target:</label>
+        <input
+          id="meta-folder-word-target"
+          type="text"
+          inputmode="numeric"
+          bind:value={folderWordCountTargetText}
+          onchange={commitFolderMeta}
+        />
+        <span class="label tags-label">Tags:</span>
+        {@render tagsEditor(folderTags, folderTagInput, [], folderOnTagInputChange, folderAddTag, folderRemoveTag)}
+      </div>
+    {/if}
+  {:else if !project.selectedPath}
+    <p class="empty">Select a document in the Binder.</p>
+  {:else if docError}
+    <p class="error">{docError}</p>
+  {:else if docMeta}
+    <div class="grid">
+      {@render fieldRow(
+        "meta-type",
+        "Type",
+        docSectionType,
+        picklists.types,
+        (v) => {
+          docSectionType = v;
+          commitDocumentMeta();
+        },
+        null,
+        null,
+      )}
+      {@render fieldRow(
+        "meta-status",
+        "Status",
+        docStatus,
+        picklists.statuses,
+        (v) => {
+          docStatus = v;
+          commitDocumentMeta();
+        },
+        statusColors[docStatus.trim()],
+        (hex) => setStatusColor(docStatus, hex),
+      )}
+      {@render fieldRow(
+        "meta-pov",
+        "POV",
+        docPov,
+        picklists.povs,
+        (v) => {
+          docPov = v;
+          commitDocumentMeta();
+        },
+        povColors[docPov.trim()],
+        (hex) => setPovColor(docPov, hex),
+      )}
 
       <span class="label">Word count:</span>
-      <span>{meta.word_count}</span>
+      <span>{docMeta.word_count}</span>
 
       <label for="meta-word-target">Word count target:</label>
       <input
         id="meta-word-target"
         type="text"
         inputmode="numeric"
-        bind:value={wordCountTargetText}
-        onchange={commitMeta}
+        bind:value={docWordCountTargetText}
+        onchange={commitDocumentMeta}
       />
 
       <span class="label tags-label">Tags:</span>
-      <div class="tags-editor">
-        {#if tags.length}
-          <div class="chips">
-            {#each tags as tag, i (tag)}
-              <span class="chip">
-                #{tag}
-                <button type="button" class="chip-remove" onclick={() => removeTag(i)}>×</button>
-              </span>
-            {/each}
-          </div>
-        {/if}
-        {#if inlineOnlyTags.length}
-          <div class="chips">
-            {#each inlineOnlyTags as tag (tag)}
-              <span class="chip chip-inline" title="Found in the document text, not frontmatter">
-                #{tag}
-              </span>
-            {/each}
-          </div>
-        {/if}
-        <input
-          type="text"
-          placeholder="Add tag…"
-          bind:value={tagInput}
-          oninput={onTagInputChange}
-          onkeydown={onTagInputKeydown}
-        />
-        {#if tagSuggestions.length}
-          <div class="chips">
-            {#each tagSuggestions as suggestion (suggestion)}
-              <button type="button" class="suggestion" onclick={() => addTag(suggestion)}>
-                {suggestion}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      {@render tagsEditor(docTags, docTagInput, docInlineOnlyTags, docOnTagInputChange, docAddTag, docRemoveTag)}
     </div>
 
-    {#if meta.extra_fields.length}
+    {#if docMeta.extra_fields.length}
       <h4>Other fields</h4>
       <div class="grid">
-        {#each meta.extra_fields as [key, value] (key)}
+        {#each docMeta.extra_fields as [key, value] (key)}
           <span class="label">{key}:</span>
           <span>{value}</span>
         {/each}
@@ -357,6 +655,11 @@
     padding: 0.5rem 0.75rem;
     box-sizing: border-box;
     font-size: 0.85rem;
+  }
+
+  h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
   }
 
   .grid {
@@ -457,6 +760,27 @@
     font-size: 0.8rem;
     color: var(--color-fg-muted);
     font-weight: normal;
+  }
+
+  .project-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .project-form label {
+    margin-top: 0.5rem;
+    color: var(--color-fg-muted);
+    font-size: 0.8rem;
+  }
+
+  .project-form input,
+  .project-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: inherit;
+    resize: vertical;
   }
 
   .empty {

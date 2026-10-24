@@ -120,11 +120,11 @@ pub fn document_metadata(contents: String) -> DocumentMetaDto {
 
 #[derive(serde::Deserialize)]
 pub struct DocumentMetaInput {
-    section_type: Option<String>,
-    status: Option<String>,
-    pov: Option<String>,
-    word_count_target: Option<u32>,
-    tags: Vec<String>,
+    pub section_type: Option<String>,
+    pub status: Option<String>,
+    pub pov: Option<String>,
+    pub word_count_target: Option<u32>,
+    pub tags: Vec<String>,
 }
 
 /// Folds `meta` into `contents`' frontmatter block (creating one if there
