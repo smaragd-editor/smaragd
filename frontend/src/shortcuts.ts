@@ -66,6 +66,7 @@ const cmdAlt = (key: string): KeyCombo => ({ key, ctrl_or_cmd: true, shift: fals
 const cmdAltShift = (key: string): KeyCombo => ({ key, ctrl_or_cmd: true, shift: true, alt: true });
 const altOnly = (key: string): KeyCombo => ({ key, ctrl_or_cmd: false, shift: false, alt: true });
 const bare = (key: string): KeyCombo => ({ key, ctrl_or_cmd: false, shift: false, alt: false });
+const shiftOnly = (key: string): KeyCombo => ({ key, ctrl_or_cmd: false, shift: true, alt: false });
 
 // prettier-ignore
 export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
@@ -83,6 +84,13 @@ export const SHORTCUT_ACTIONS: ShortcutActionDef[] = [
   // leaving the two most-used panels as the only ones without a toggle key.
   { id: "toggle_editor", label: "Toggle Editor", category: "View", default: bare("f1") },
   { id: "toggle_binder", label: "Toggle Binder", category: "View", default: bare("f3") },
+  // Never closes the Binder (unlike toggle_binder) — ensures it's open and
+  // moves keyboard focus into it, same shape as toggle_binder_focus (F6)
+  // but without that action's binder/editor-alternation hack: this one
+  // only ever opens-and-focuses, matching the real app's own
+  // ToggleBinderFocus/"Reveal in Binder" focus_requested handling (see
+  // stores/project.svelte.ts's focusBinder).
+  { id: "focus_binder", label: "Focus Binder", category: "View", default: shiftOnly("f3") },
   { id: "save", label: "Save", category: "Editing", default: cmd("s") },
   { id: "new_file", label: "New File", category: "FilesAndFolders", default: cmd("n") },
   { id: "new_folder", label: "New Folder", category: "FilesAndFolders", default: cmdShift("f") },
@@ -383,5 +391,8 @@ export function installBuiltinShortcutHandlers() {
   registerShortcutHandler("toggle_binder_focus", () => {
     binderFocused = !binderFocused;
     dockLayoutRegistry.api?.openPanel(binderFocused ? "binder" : "editor");
+  });
+  registerShortcutHandler("focus_binder", () => {
+    dockLayoutRegistry.api?.ensurePanelOpen("binder");
   });
 }
