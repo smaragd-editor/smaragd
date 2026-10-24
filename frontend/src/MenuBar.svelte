@@ -192,6 +192,28 @@
     els[next]?.focus();
   }
 
+  // Alt+<mnemonic> (Alt+F for File, etc. — see each menu's own `mnemonic`
+  // above) opens that menu directly and focuses its first item, matching
+  // the real app's own `top_menu_button(ui, label, mnemonic_key, ...)`.
+  async function openMenuViaMnemonic(index: number) {
+    menuLabelRefs[index]?.focus();
+    openMenu = menus[index].id;
+    await tick();
+    focusFirst(dropdownEl);
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      close();
+      return;
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const index = menus.findIndex((m) => m.mnemonic.toLowerCase() === e.key.toLowerCase());
+    if (index === -1) return;
+    e.preventDefault();
+    openMenuViaMnemonic(index);
+  }
+
   async function switchMenu(fromIndex: number, dir: 1 | -1, focusFirstItem: boolean) {
     const next = (fromIndex + dir + menus.length) % menus.length;
     menuLabelRefs[next]?.focus();
@@ -427,10 +449,11 @@
     }));
   }
 
-  const menus: { id: string; label: string; items: () => Item[] }[] = [
+  const menus: { id: string; label: string; mnemonic: string; items: () => Item[] }[] = [
     {
       id: "file",
       label: "File",
+      mnemonic: "F",
       items: () => [
         { label: "New Project…", shortcutId: "new_project", action: pickAndCreateProject },
         { label: "Open Project…", shortcutId: "open_project", action: pickAndOpenProject },
@@ -491,6 +514,7 @@
     {
       id: "edit",
       label: "Edit",
+      mnemonic: "E",
       items: () => [
         { label: "Cut", action: () => document.execCommand("cut") },
         { label: "Copy", action: () => document.execCommand("copy") },
@@ -507,6 +531,7 @@
     {
       id: "view",
       label: "View",
+      mnemonic: "V",
       items: () => [
         { label: "Editor", action: () => dock("editor"), disabled: !hasProject },
         {
@@ -556,6 +581,7 @@
     {
       id: "tools",
       label: "Tools",
+      mnemonic: "T",
       items: () => [
         {
           label: "Focus Mode",
@@ -625,6 +651,9 @@
     {
       id: "versions",
       label: "Versions",
+      // "S", not "V" (Versions' own first letter) — View already claims
+      // Alt+V, matching the real app's own mnemonic choice here.
+      mnemonic: "S",
       items: () => [
         {
           label: "Commit",
@@ -662,6 +691,7 @@
     {
       id: "collaborate",
       label: "Collaborate",
+      mnemonic: "C",
       items: () => [
         { label: "Host Session", action: () => dock("collab"), disabled: !hasProject },
         { label: "Join Session…", action: () => dock("collab"), disabled: !hasProject },
@@ -678,6 +708,7 @@
     {
       id: "window",
       label: "Window",
+      mnemonic: "W",
       items: () => [
         { label: "Save Current Layout…", action: saveCurrentLayout, disabled: !hasProject },
         { label: "Layouts", action: () => {}, disabled: true },
@@ -693,6 +724,7 @@
     {
       id: "help",
       label: "Help",
+      mnemonic: "H",
       items: () => [
         {
           label: "User Manual",
@@ -830,7 +862,7 @@
   }
 </script>
 
-<svelte:window onclick={handleWindowClick} onkeydown={(e) => e.key === "Escape" && close()} />
+<svelte:window onclick={handleWindowClick} onkeydown={handleWindowKeydown} />
 
 <nav class="menu-bar">
   {#each menus as menu, mi (menu.id)}
