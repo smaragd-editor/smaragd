@@ -25,6 +25,26 @@
       : "Binder",
   );
 
+  let categoryRefs: (HTMLButtonElement | null)[] = [];
+
+  // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
+  // Left/Right/Home/End) — same pattern MenuBar.svelte's own dropdowns and
+  // SettingsDialog.svelte's own category list use.
+  function handleCategoryNavKeydown(e: KeyboardEvent) {
+    if (!categoryRefs.includes(document.activeElement as HTMLButtonElement)) return;
+    const current = categories.indexOf(active);
+    let next: number;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (current + 1) % categories.length;
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+      next = (current - 1 + categories.length) % categories.length;
+    } else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = categories.length - 1;
+    else return;
+    e.preventDefault();
+    active = categories[next];
+    categoryRefs[next]?.focus();
+  }
+
   type FolderRoleEntry = { path: string; role: FolderRole };
   type ProjectSettings = {
     binder_color_mode: BinderColorMode;
@@ -151,15 +171,28 @@
   <div
     class="modal"
     onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.key === "Escape" && onClose()}
+    onkeydown={(e) => {
+      if (e.key === "Escape") onClose();
+      else handleCategoryNavKeydown(e);
+    }}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
     <div class="layout">
       <nav class="categories">
-        {#each categories as category (category)}
-          <button class:active={active === category} onclick={() => (active = category)}>
+        {#each categories as category, i (category)}
+          <button
+            class:active={active === category}
+            role="tab"
+            aria-selected={active === category}
+            tabindex={active === category ? 0 : -1}
+            bind:this={categoryRefs[i]}
+            onclick={() => {
+              active = category;
+              categoryRefs[i]?.focus();
+            }}
+          >
             {category === "DailyNotes" ? "Daily Notes" : category === "FolderRoles" ? "Folder Roles" : category}
           </button>
         {/each}
@@ -297,6 +330,11 @@
   .categories button.active {
     background: var(--color-accent);
     color: white;
+  }
+
+  .categories button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
   }
 
   .content {

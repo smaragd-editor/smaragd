@@ -75,8 +75,49 @@
     applyTheme();
   }
 
-  function keydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && !recordingFor) onClose();
+  let categoryRefs: (HTMLButtonElement | null)[] = [];
+
+  // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
+  // Left/Right/Home/End) — same pattern MenuBar.svelte's own dropdowns use.
+  // Returns true if it handled the key, so handleModalKeydown knows not to
+  // fall through to anything else.
+  function handleCategoryNavKeydown(e: KeyboardEvent): boolean {
+    if (!categoryRefs.includes(document.activeElement as HTMLButtonElement)) return false;
+    const current = categories.indexOf(active);
+    let next: number;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") next = (current + 1) % categories.length;
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+      next = (current - 1 + categories.length) % categories.length;
+    } else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = categories.length - 1;
+    else return false;
+    e.preventDefault();
+    active = categories[next];
+    categoryRefs[next]?.focus();
+    return true;
+  }
+
+  // Everything keyboard-related for this dialog funnels through here
+  // (rather than a <svelte:window> listener) and always stops propagation —
+  // both so a shortcut-recording key combo (which can be anything,
+  // including Alt+<menu mnemonic>) never also reaches MenuBar's own
+  // window-level Alt+<letter> handling behind this dialog, and so Escape
+  // reliably reaches *this* handler itself: a <svelte:window> listener
+  // wouldn't, since .modal previously called stopPropagation()
+  // unconditionally on every keydown, which — being on an ancestor of
+  // wherever focus actually was — blocked the event from ever bubbling up
+  // to window in the first place.
+  function handleModalKeydown(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (recordingFor) {
+      onRecordKeydown(e);
+      return;
+    }
+    if (e.key === "Escape") {
+      onClose();
+      return;
+    }
+    handleCategoryNavKeydown(e);
   }
 
   let recordingFor = $state<string | null>(null);
@@ -121,21 +162,29 @@
   }
 </script>
 
-<svelte:window onkeydown={recordingFor ? onRecordKeydown : keydown} />
-
 <div class="backdrop" onclick={onClose} role="presentation">
   <div
     class="modal"
     onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()}
+    onkeydown={handleModalKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
     <div class="layout">
       <nav class="categories">
-        {#each categories as category (category)}
-          <button class:active={active === category} onclick={() => (active = category)}>
+        {#each categories as category, i (category)}
+          <button
+            class:active={active === category}
+            role="tab"
+            aria-selected={active === category}
+            tabindex={active === category ? 0 : -1}
+            bind:this={categoryRefs[i]}
+            onclick={() => {
+              active = category;
+              categoryRefs[i]?.focus();
+            }}
+          >
             {category}
           </button>
         {/each}
@@ -504,6 +553,11 @@
   .categories button.active {
     background: var(--color-accent);
     color: white;
+  }
+
+  .categories button:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
   }
 
   .content {
