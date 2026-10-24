@@ -66,6 +66,70 @@
   let error = $state<string | null>(null);
   let dragOverPath = $state<string | null>(null);
 
+  // Folder expand/collapse state, per project — the real app leaves this to
+  // egui's own CollapsingState, which eframe persists to its own storage
+  // file across restarts (binder_panel.rs's folder_collapsing_id/
+  // is_folder_open/set_folder_open); this port has no equivalent framework
+  // memory, so it's tracked explicitly here and persisted to localStorage,
+  // the same mechanism DockLayout.svelte's own dock-layout/saved-layouts
+  // already use for UI-presentational state that isn't core project data.
+  // Stores which paths are *collapsed* (not open) so a newly-created folder
+  // — never seen before, so absent from either set — defaults to open,
+  // matching the real app's own `is_none_or(|state| state.is_open())`.
+  const COLLAPSED_KEY = "smaragd.binder-collapsed.v1";
+  let collapsedPaths = $state<Set<string>>(new Set());
+  let lastLoadedRoot: string | null = null;
+
+  function readAllCollapsed(): Record<string, string[]> {
+    try {
+      return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  function persistCollapsed() {
+    const all = readAllCollapsed();
+    if (collapsedPaths.size > 0) {
+      all[root] = [...collapsedPaths];
+    } else {
+      delete all[root];
+    }
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(all));
+  }
+
+  // Re-reads whenever the open project changes — root is only a $derived
+  // value, not a remount trigger (switching projects can update it within
+  // the same mounted BinderTree instance), so this can't just be an
+  // onMount.
+  $effect(() => {
+    if (root === lastLoadedRoot) return;
+    lastLoadedRoot = root;
+    collapsedPaths = new Set(readAllCollapsed()[root] ?? []);
+  });
+
+  function isExpanded(path: string): boolean {
+    return !collapsedPaths.has(path);
+  }
+
+  // <details>'s own native toggle event — fired whenever its open state
+  // actually flips, by user click (the triangle; folder-row name clicks
+  // are metadata-selection instead, see below) or by this component's own
+  // reactive `open={isExpanded(...)}` binding reflecting a state change
+  // back into the DOM. The equality check makes the latter a no-op rather
+  // than a redundant (and, worse, potentially looping) write.
+  function handleToggle(path: string, isOpen: boolean) {
+    const shouldBeCollapsed = !isOpen;
+    if (shouldBeCollapsed === collapsedPaths.has(path)) return;
+    if (shouldBeCollapsed) {
+      collapsedPaths.add(path);
+    } else {
+      collapsedPaths.delete(path);
+    }
+    collapsedPaths = new Set(collapsedPaths);
+    persistCollapsed();
+  }
+
   // A folder/project-root row click selects it for the Metadata panel
   // (matching the real app's own BinderEvent::SelectFolder/SelectProject)
   // without expanding/collapsing it — <summary>'s own native click
@@ -326,7 +390,7 @@
 
 {#snippet node(n: BinderNodeDto)}
   {#if n.kind === "Folder"}
-    <details open>
+    <details open={isExpanded(n.path)} ontoggle={(e) => handleToggle(n.path, e.currentTarget.open)}>
       <summary
         class:drag-over={dragOverPath === n.path}
         draggable="true"
