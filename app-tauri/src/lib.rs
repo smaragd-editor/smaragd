@@ -31,6 +31,8 @@ pub fn run() {
             pomodoro::pomodoro_skip,
             project::project_open,
             project::project_templates_list,
+            project::backup_run,
+            project::backup_default_dir,
             project::project_create_from_template,
             project::project_close,
             project::project_binder_tree,

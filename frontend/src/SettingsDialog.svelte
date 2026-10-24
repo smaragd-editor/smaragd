@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { settingsStore, saveSettingsDebounced, refreshSpellCheckCatalog } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, SHORTCUT_CATEGORIES, effectiveCombo, setShortcut } from "./shortcuts";
   import type { KeyCombo } from "./stores/settings.svelte";
@@ -87,6 +88,24 @@
   onMount(() => {
     categoryRefs[categories.indexOf(active)]?.focus();
   });
+
+  let defaultBackupDir = $state<string | null>(null);
+  onMount(async () => {
+    defaultBackupDir = await invoke<string | null>("backup_default_dir");
+  });
+
+  async function pickBackupDir() {
+    const picked = await openFileDialog({ directory: true, multiple: false });
+    if (typeof picked === "string") {
+      settingsStore.value.backup_dir = picked;
+      update();
+    }
+  }
+
+  function resetBackupDir() {
+    settingsStore.value.backup_dir = null;
+    update();
+  }
 
   // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
   // Left/Right/Home/End) — same pattern MenuBar.svelte's own dropdowns use.
@@ -408,6 +427,21 @@
               }}
             />
           </label>
+          <label class="row">
+            Backup folder
+            <input
+              type="text"
+              readonly
+              style="max-width: 20rem;"
+              value={settingsStore.value.backup_dir ?? defaultBackupDir ?? "(no location available)"}
+            />
+          </label>
+          <div class="row buttons">
+            <button onclick={pickBackupDir}>Browse…</button>
+            {#if settingsStore.value.backup_dir}
+              <button onclick={resetBackupDir}>Reset</button>
+            {/if}
+          </div>
         {:else if active === "Sync"}
           <p class="note">
             Sync has no real device pairing in this build yet — the Sync dock panel runs a
@@ -592,6 +626,11 @@
   .row input[type="number"],
   .row select {
     max-width: 12rem;
+  }
+
+  .row.buttons {
+    justify-content: flex-end;
+    gap: 0.5rem;
   }
 
   h4 {

@@ -293,6 +293,73 @@ fn ensure_starter_folders(project: &mut Project) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Serialize)]
+#[serde(tag = "kind")]
+pub enum BackupOutcome {
+    Skipped,
+    BackedUp,
+    Failed { message: String },
+}
+
+/// The platform default backup directory, for Settings > Versions to show
+/// as a placeholder when `backup_dir` isn't set yet — mirrors
+/// `Settings::resolve_backup_dir`'s own fallback without requiring a
+/// project root (the frontend's settings dialog has none to pass).
+#[tauri::command]
+pub fn backup_default_dir() -> Option<String> {
+    smaragd_core::backup::default_backup_dir().map(|path| path.display().to_string())
+}
+
+/// Take a Scrivener-style zipped backup of the project at `root` if
+/// `trigger` ("open"/"close"/"manual_save") is enabled in `Settings` —
+/// ports `app::backup::SmaragdApp::run_backup`. Synchronous, like the real
+/// app's own version, for the same reason: a backup must actually finish
+/// before the frontend's "close project"/"exit" flow moves on, which a
+/// fire-and-forget background task can't guarantee. An unknown `trigger`
+/// value is treated as never-enabled rather than an error.
+#[tauri::command]
+pub fn backup_run(root: String, trigger: String) -> BackupOutcome {
+    let settings = global_settings();
+    let enabled = settings.backup_enabled
+        && match trigger.as_str() {
+            "open" => settings.backup_on_open,
+            "close" => settings.backup_on_close,
+            "manual_save" => settings.backup_on_manual_save,
+            _ => false,
+        };
+    if !enabled {
+        return BackupOutcome::Skipped;
+    }
+    let Some(backup_dir) = settings.resolve_backup_dir() else {
+        return BackupOutcome::Failed {
+            message: "Couldn't determine a backup directory — set one in Settings > Versions"
+                .to_string(),
+        };
+    };
+    let project_root = Path::new(&root);
+    let project_name = smaragd_core::export::sanitize_filename_component(
+        &project_root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    match smaragd_core::backup::create_backup(project_root, &backup_dir, &project_name) {
+        Ok(_) => {
+            let keep = settings.resolve_backup_keep_count();
+            match smaragd_core::backup::prune_old_backups(&backup_dir, &project_name, keep as usize)
+            {
+                Ok(()) => BackupOutcome::BackedUp,
+                Err(err) => BackupOutcome::Failed {
+                    message: format!("Backup succeeded, but couldn't remove old backups: {err}"),
+                },
+            }
+        }
+        Err(err) => BackupOutcome::Failed {
+            message: format!("Backup failed: {err}"),
+        },
+    }
+}
+
 /// Open (or re-open) a project at `root` and return its binder tree. Stateless
 /// for now — each call re-scans from disk — which is fine at Phase 2 scope; a
 /// held-in-memory `Project` (via `tauri::State`) is a later refinement once the

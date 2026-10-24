@@ -3,7 +3,7 @@
   import {
     project,
     openDocument,
-    saveDocument,
+    manualSaveDocument,
     createDocumentAtSelection,
     openFindReplace,
     openDailyNote,
@@ -114,13 +114,13 @@
   async function execute(command: Command) {
     switch (command.kind) {
       case "save":
-        await saveDocument();
+        await manualSaveDocument();
         break;
       case "quit":
         runShortcutAction("exit");
         break;
       case "saveAndQuit":
-        await saveDocument();
+        await manualSaveDocument();
         runShortcutAction("exit");
         break;
       case "open": {

@@ -12,7 +12,7 @@ import { toggleDarkMode } from "./stores/theme.svelte";
 import { toggleFocusMode } from "./stores/focusMode.svelte";
 import {
   project,
-  saveDocument,
+  manualSaveDocument,
   closeDocument,
   newDocumentAtSelection,
   newFolderAtSelection,
@@ -314,7 +314,7 @@ export function installBuiltinShortcutHandlers() {
   for (const [actionId, panelId] of Object.entries(DOCK_TAB_ACTIONS)) {
     registerShortcutHandler(actionId, () => dockLayoutRegistry.api?.openPanel(panelId));
   }
-  registerShortcutHandler("save", () => saveDocument());
+  registerShortcutHandler("save", () => manualSaveDocument());
   registerShortcutHandler("close_document", closeDocument);
   registerShortcutHandler("new_file", newDocumentAtSelection);
   registerShortcutHandler("new_folder", newFolderAtSelection);

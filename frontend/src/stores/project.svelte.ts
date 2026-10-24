@@ -110,6 +110,18 @@ function recordRecentProject(root: string) {
   saveSettingsDebounced();
 }
 
+// Scrivener-style zipped backups (core::backup, app::backup::run_backup):
+// "open"/"close"/"manual_save" map to the Settings > Versions toggles of
+// the same name. A no-op (not a toast) when disabled; a failure shows as
+// an error toast but never blocks whatever the caller was already doing.
+type BackupOutcome = { kind: "Skipped" } | { kind: "BackedUp" } | { kind: "Failed"; message: string };
+
+async function runBackup(root: string, trigger: "open" | "close" | "manual_save") {
+  const outcome = await invoke<BackupOutcome>("backup_run", { root, trigger });
+  if (outcome.kind === "BackedUp") showToast("Backed up project");
+  else if (outcome.kind === "Failed") showToast(outcome.message);
+}
+
 export async function openProject(root: string) {
   project.openError = null;
   project.value = null;
@@ -119,6 +131,7 @@ export async function openProject(root: string) {
   try {
     project.value = await invoke<ProjectSummary>("project_open", { root });
     recordRecentProject(root);
+    await runBackup(root, "open");
   } catch (err) {
     project.openError = String(err);
   }
@@ -136,13 +149,16 @@ export async function createProjectFromTemplate(root: string, templateId: string
       templateId,
     });
     recordRecentProject(root);
+    await runBackup(root, "open");
   } catch (err) {
     project.openError = String(err);
   }
 }
 
 export async function closeProject() {
+  const root = project.value?.root;
   await invoke("project_close");
+  if (root) await runBackup(root, "close");
   project.value = null;
   project.selectedPath = null;
   project.documentText = "";
@@ -345,18 +361,31 @@ function flushPendingSave() {
   }
 }
 
+/** Backs the Save shortcut (Ctrl+S) specifically — the one explicit "manual
+ * save" moment this port's otherwise-autosave-only model has, and the only
+ * call site that should trip the `backup_on_manual_save` trigger; the
+ * debounce timer and `flushPendingSave`/`flushBeforeExit` below call
+ * `saveDocument` directly so plain autosave never does. */
+export async function manualSaveDocument() {
+  await saveDocument();
+  if (project.value) await runBackup(project.value.root, "manual_save");
+}
+
 /** Backs the Exit shortcut — awaits the save rather than firing it off like
  * `flushPendingSave` does, so the window doesn't close mid-write. This
  * port's autosave (an 800ms debounce after every keystroke, not an
  * explicit-save/dirty-tab model) makes the real app's whole "unsaved
  * changes?" confirm-on-exit modal unnecessary: the realistic gap is just
- * whatever's still sitting in that debounce, which this closes. */
+ * whatever's still sitting in that debounce, which this closes. Also runs
+ * the "close" backup trigger, matching `close_project`'s own call to
+ * `run_backup(BackupTrigger::Close)` right before the real app exits. */
 export async function flushBeforeExit() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = undefined;
     await saveDocument();
   }
+  if (project.value) await runBackup(project.value.root, "close");
 }
 
 export function onTreeChange(tree: BinderNodeDto) {
