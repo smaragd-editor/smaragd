@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { project, onTreeChange } from "./stores/project.svelte";
   import type { BinderColorMode, BinderNodeDto, FolderRole } from "./stores/project.svelte";
@@ -26,6 +27,14 @@
   );
 
   let categoryRefs: (HTMLButtonElement | null)[] = [];
+
+  // Without this, keyboard focus starts outside .modal entirely, so
+  // Up/Down wouldn't do anything until an extra, unrelated Tab press
+  // happened to land on a category button — see SettingsDialog.svelte's
+  // own copy of this fix for the full explanation.
+  onMount(() => {
+    categoryRefs[categories.indexOf(active)]?.focus();
+  });
 
   // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
   // Left/Right/Home/End) — same pattern MenuBar.svelte's own dropdowns and

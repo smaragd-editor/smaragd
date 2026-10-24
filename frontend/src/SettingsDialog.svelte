@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { settingsStore, saveSettingsDebounced, refreshSpellCheckCatalog } from "./stores/settings.svelte";
   import { SHORTCUT_ACTIONS, SHORTCUT_CATEGORIES, effectiveCombo, setShortcut } from "./shortcuts";
@@ -76,6 +77,16 @@
   }
 
   let categoryRefs: (HTMLButtonElement | null)[] = [];
+
+  // Without this, keyboard focus starts outside .modal entirely (wherever
+  // it was before the dialog opened), so Up/Down wouldn't do anything —
+  // handleCategoryNavKeydown only reacts once a category button already
+  // has focus — until an extra, unrelated Tab press happened to land on
+  // one. Focusing the active category immediately makes arrow-key
+  // navigation work the moment the dialog opens.
+  onMount(() => {
+    categoryRefs[categories.indexOf(active)]?.focus();
+  });
 
   // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
   // Left/Right/Home/End) — same pattern MenuBar.svelte's own dropdowns use.
