@@ -558,7 +558,10 @@ export async function undoLastStructuralOp() {
 
 export async function gotoDocumentLine(path: string, line: number) {
   if (project.selectedPath !== path) await openDocument(path);
-  dockLayoutRegistry.api?.openPanel("editor");
+  // ensurePanelOpen, not openPanel: the latter toggles, which would close
+  // the Editor tab instead of focusing it whenever it was already the
+  // active tab — the common case, since it's in the default layout.
+  dockLayoutRegistry.api?.ensurePanelOpen("editor");
   editorRef?.gotoLine(line);
 }
 
@@ -636,10 +639,20 @@ export async function openDailyNote() {
     return;
   }
   try {
-    const result = await invoke<{ path: string; cursor: number | null }>("open_daily_note", {
-      root: project.value.root,
-    });
+    const result = await invoke<{ path: string; cursor: number | null; tree: BinderNodeDto }>(
+      "open_daily_note",
+      { root: project.value.root },
+    );
+    // A freshly-created note (and, the first time, a freshly-created Daily
+    // Notes folder) otherwise doesn't show up in the Binder until
+    // something else happens to refresh it.
+    onTreeChange(result.tree);
     await openDocument(result.path);
+    // ensurePanelOpen, not openPanel: the latter toggles, which would
+    // close the Editor tab instead of focusing it whenever it was already
+    // the active tab.
+    dockLayoutRegistry.api?.ensurePanelOpen("editor");
+    editorRef?.gotoLine(1);
   } catch (err) {
     showToast(String(err));
   }

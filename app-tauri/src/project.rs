@@ -629,6 +629,7 @@ pub fn binder_move_before(
 pub struct DailyNoteResult {
     path: String,
     cursor: Option<usize>,
+    tree: BinderNodeDto,
 }
 
 #[tauri::command]
@@ -644,9 +645,18 @@ pub fn open_daily_note(root: String) -> Result<DailyNoteResult, String> {
             &settings.template_time_format,
         )
         .map_err(|e| e.to_string())?;
+    // `open_or_create_daily_note` already rescans internally (via
+    // `write_new_document`/`create_document_from_template_with_formats`)
+    // when it actually creates something, so the binder tree here is
+    // already current — this just needs to hand it back, the same way
+    // every other binder-mutating command does, so the frontend doesn't
+    // show a freshly-created note (and, the first time, a freshly-created
+    // Daily Notes folder) missing from the Binder until something else
+    // happens to refresh it.
     Ok(DailyNoteResult {
         path: path.display().to_string(),
         cursor,
+        tree: build_tree(&project),
     })
 }
 
