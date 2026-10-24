@@ -8,11 +8,13 @@
 //! already recompute fresh from disk on every call (same convention as
 //! Phase 2's `project_binder_tree`) — no new core logic, only IPC DTOs
 //! around what's there. Deliberately lighter than the real egui panels:
-//! Dashboard's activity-by-weekday/by-hour bar charts (egui_plot-specific)
-//! aren't ported, Version Activity skips the live "this session's git
-//! actions" log (app-level state not available here), and Metadata is
-//! read-only (no save-frontmatter command yet) — each a later refinement,
-//! not required to prove these panels dock and show real project data.
+//! Version Activity skips the live "this session's git actions" log (app-
+//! level state not available here), and Metadata is read-only (no save-
+//! frontmatter command yet) — each a later refinement, not required to
+//! prove these panels dock and show real project data. Dashboard's bar
+//! charts (originally egui_plot-specific) are fully ported now too, as
+//! plain inline SVG on the frontend side (DashboardPanel.svelte) — no
+//! charting library pulled in just for six fixed, non-interactive bars.
 
 use std::path::Path;
 
@@ -232,23 +234,99 @@ pub fn note_delete(root: String, id: String) -> Result<(), String> {
     project.delete_note(id).map_err(|e| e.to_string())
 }
 
+/// One bar in a day-window chart — `label` is the already-formatted x-axis
+/// text (`"Jan 5"`, matching the real app's `day_bar_chart`'s own
+/// `x_axis_formatter`), computed server-side so the frontend doesn't need
+/// its own date-formatting logic just for this.
+#[derive(Serialize)]
+pub struct DayBucket {
+    label: String,
+    value: u32,
+}
+
+/// How many trailing calendar days the daily bar charts cover — matches
+/// the real app's own `dashboard_panel::DAY_WINDOW`.
+const DAY_WINDOW: i64 = 60;
+
 #[derive(Serialize)]
 pub struct DashboardDto {
     session_count: usize,
     total_minutes: u64,
     total_words: u64,
     documents_created: usize,
+    word_counts: Vec<DayBucket>,
+    sessions: Vec<DayBucket>,
+    documents_created_by_day: Vec<DayBucket>,
+    documents_modified_by_day: Vec<DayBucket>,
+    /// Both metrics for the weekday/hour charts are sent together — the
+    /// real app recomputes on every frame when the user flips the Words/
+    /// Time toggle, but a Tauri command round trip is worth avoiding for
+    /// something this cheap to compute once.
+    weekday_words: [u64; 7],
+    weekday_minutes: [u64; 7],
+    hour_words: [u64; 24],
+    hour_minutes: [u64; 24],
 }
 
 #[tauri::command]
 pub fn dashboard_summary(root: String) -> Result<DashboardDto, String> {
+    use smaragd_core::dashboard::{
+        self, ActivityMetric, activity_by_hour, activity_by_weekday, count_by_day,
+        count_by_day_strings, last_n_days, sessions_per_day, system_time_to_local,
+    };
+
     let project = load(&root)?;
-    let summary = smaragd_core::dashboard::summary(&project.meta.session_log);
+    let summary = dashboard::summary(&project.meta.session_log);
+
+    let today = chrono::Local::now().date_naive();
+    let days = last_n_days(today, DAY_WINDOW);
+    let day_label = |date: &chrono::NaiveDate| date.format("%b %-d").to_string();
+
+    let day_buckets = |counts: &std::collections::BTreeMap<chrono::NaiveDate, u32>| {
+        days.iter()
+            .map(|date| DayBucket {
+                label: day_label(date),
+                value: counts.get(date).copied().unwrap_or(0),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let word_counts = days
+        .iter()
+        .map(|date| DayBucket {
+            label: day_label(date),
+            value: project
+                .meta
+                .daily_word_counts
+                .get(&date.format("%Y-%m-%d").to_string())
+                .copied()
+                .unwrap_or(0),
+        })
+        .collect();
+    let sessions = day_buckets(&sessions_per_day(&project.meta.session_log));
+    let documents_created_by_day = day_buckets(&count_by_day_strings(
+        project.meta.document_created.values(),
+    ));
+    let documents_modified_by_day = day_buckets(&count_by_day(
+        project
+            .document_modified_times()
+            .into_values()
+            .map(system_time_to_local),
+    ));
+
     Ok(DashboardDto {
         session_count: summary.session_count,
         total_minutes: summary.total_minutes,
         total_words: summary.total_words,
         documents_created: project.meta.document_created.len(),
+        word_counts,
+        sessions,
+        documents_created_by_day,
+        documents_modified_by_day,
+        weekday_words: activity_by_weekday(&project.meta.session_log, ActivityMetric::Words),
+        weekday_minutes: activity_by_weekday(&project.meta.session_log, ActivityMetric::Time),
+        hour_words: activity_by_hour(&project.meta.session_log, ActivityMetric::Words),
+        hour_minutes: activity_by_hour(&project.meta.session_log, ActivityMetric::Time),
     })
 }
 
