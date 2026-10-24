@@ -133,6 +133,10 @@
 
   let treeEl: HTMLElement | undefined;
 
+  function focusRowByPath(path: string) {
+    treeEl?.querySelector<HTMLElement>(`[data-binder-path="${CSS.escape(path)}"]`)?.focus();
+  }
+
   /** Ports binder_panel.rs's `focus_requested` handling — called by
    * `focusBinder()` (stores/project.svelte.ts) right after the Binder
    * panel becomes visible. Focuses the open document's row if it's
@@ -140,10 +144,66 @@
    * "first visible row" fallback) otherwise. */
   export function focusSelectedOrTop() {
     const selected = project.selectedPath;
-    const target = selected && isRowVisible(selected) ? selected : root;
-    treeEl
-      ?.querySelector<HTMLElement>(`[data-binder-path="${CSS.escape(target)}"]`)
-      ?.focus();
+    focusRowByPath(selected && isRowVisible(selected) ? selected : root);
+  }
+
+  // Every row's path, top-to-bottom in rendered order — never recursing
+  // into a collapsed folder's children, same as binder_panel.rs's
+  // `visible_rows` (built the same way: `show_node` simply never
+  // recurses into one). This is the order ArrowUp/ArrowDown step through.
+  function visibleRowPaths(): string[] {
+    const paths: string[] = [];
+    function walk(node: BinderNodeDto) {
+      paths.push(node.path);
+      if (node.kind === "Folder" && isExpanded(node.path)) {
+        for (const child of node.children) walk(child);
+      }
+    }
+    walk(tree);
+    return paths;
+  }
+
+  /** Arrow-key tree navigation, ported from binder_panel.rs: Up/Down move
+   * a pure keyboard-focus cursor between visible rows (clamped, no wrap —
+   * independent of document selection, which only Enter/Space, already
+   * handled by each row's own click/keydown, changes); Left collapses the
+   * focused row if it's an open folder, Right expands it if closed —
+   * neither one moves focus elsewhere or has a "jump to parent/first
+   * child" step, matching the real app exactly. Scoped to this one
+   * `onkeydown` on the tree container (not a global listener) via the
+   * `data-binder-path` guard below, which only acts when the event
+   * actually originated from one of the tree's own row elements —
+   * `handleToggle`'s own doc comment covers why calling it directly here
+   * (rather than only ever from `<details>`'s native `ontoggle`) is safe. */
+  function onTreeKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement;
+    const path = target.dataset.binderPath;
+    if (path === undefined) return;
+    const rows = visibleRowPaths();
+    const index = rows.indexOf(path);
+    if (index === -1) return;
+
+    if (e.key === "ArrowDown") {
+      if (index < rows.length - 1) {
+        e.preventDefault();
+        focusRowByPath(rows[index + 1]);
+      }
+    } else if (e.key === "ArrowUp") {
+      if (index > 0) {
+        e.preventDefault();
+        focusRowByPath(rows[index - 1]);
+      }
+    } else if (e.key === "ArrowLeft") {
+      if (target.closest("summary") && isExpanded(path)) {
+        e.preventDefault();
+        handleToggle(path, false);
+      }
+    } else if (e.key === "ArrowRight") {
+      if (target.closest("summary") && !isExpanded(path)) {
+        e.preventDefault();
+        handleToggle(path, true);
+      }
+    }
   }
 
   onMount(() => registerBinder({ focusSelectedOrTop }));
@@ -512,7 +572,14 @@
     Color: {colorModeLabels[project.value?.binder_color_mode ?? "Off"]}
   </button>
 </div>
-<nav class="tree" bind:this={treeEl}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -- scoped
+     event delegation for arrow-key tree navigation (onTreeKeydown):
+     every row inside already has its own interactive role/tabindex
+     (role="button" folder names, native <button> doc rows); this
+     listener only acts when the event's own target is one of them,
+     via the data-binder-path guard, same as `nav`'s DOM landmark role
+     normally would. -->
+<nav class="tree" bind:this={treeEl} onkeydown={onTreeKeydown}>
   {@render node(tree)}
   {#if error}<p class="error">{error}</p>{/if}
 </nav>
