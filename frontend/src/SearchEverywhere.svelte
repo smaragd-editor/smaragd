@@ -271,6 +271,8 @@
     return "No results.";
   }
 
+  let inputEl = $state<HTMLInputElement>();
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       onClose();
@@ -304,7 +306,23 @@
   >
     <div class="tabs">
       {#each TABS as t (t)}
-        <button class:active={tab === t} onclick={() => setTab(t)}>{t}</button>
+        <button
+          class:active={tab === t}
+          onclick={() => {
+            setTab(t);
+            // WebKit doesn't focus a <button> on mouse click (unlike
+            // Chromium/Firefox), so without this, clicking a tab leaves
+            // nothing focused inside the dialog at all — the next
+            // Shift+Tab's keydown then never reaches .palette's onkeydown
+            // (bubbling needs the focused element to be a descendant of
+            // it), and falls through to the browser's own focus-traversal,
+            // which lands on whatever's focusable just before this dialog
+            // in the document — the menu bar.
+            inputEl?.focus();
+          }}
+        >
+          {t}
+        </button>
       {/each}
     </div>
     <!-- svelte-ignore a11y_autofocus -->
@@ -312,6 +330,7 @@
       type="text"
       placeholder="Search documents, text, actions, and settings…"
       bind:value={query}
+      bind:this={inputEl}
       oninput={() => (selected = 0)}
       autofocus
     />
