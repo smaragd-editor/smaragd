@@ -19,7 +19,7 @@
   import { registerDockLayout, unregisterDockLayout } from "./stores/dockLayoutRegistry.svelte";
   import { themeState } from "./stores/theme.svelte";
   import { settingsStore } from "./stores/settings.svelte";
-  import { project } from "./stores/project.svelte";
+  import { project, focusBinder } from "./stores/project.svelte";
 
   const STORAGE_KEY = "smaragd.dock-layout.v1";
 
@@ -174,6 +174,24 @@
     api.addPanel({ id, component: id, title: PANEL_TITLES[id] ?? id });
   }
 
+  // Brings `id` to front (or creates it), then — for the Binder
+  // specifically — requests keyboard focus into it, matching the real
+  // app's own tab-to-front-plus-focus-request combo
+  // (ShortcutAction::ToggleBinderFocus/"Reveal in Binder",
+  // binder_panel.rs's `focus_requested`). Shared by openPanel's
+  // not-already-active branch and ensurePanelOpen, the two places a panel
+  // actually transitions from not-visible to visible.
+  function showPanel(id: string) {
+    if (!api) return;
+    const existing = api.getPanel(id);
+    if (existing) {
+      existing.api.setActive();
+    } else {
+      addPanelAtRememberedPosition(id);
+    }
+    if (id === "binder") focusBinder();
+  }
+
   // A real toggle: clicking an already-*active* panel's button closes it;
   // clicking an open-but-inactive one (e.g. buried behind another tab in
   // the same group) just brings it to front, same as before — closing that
@@ -185,16 +203,12 @@
   export function openPanel(id: string) {
     if (!api) return;
     const existing = api.getPanel(id);
-    if (existing) {
-      if (existing.api.isActive) {
-        rememberPositionBeforeClose(existing);
-        existing.api.close();
-      } else {
-        existing.api.setActive();
-      }
+    if (existing?.api.isActive) {
+      rememberPositionBeforeClose(existing);
+      existing.api.close();
       return;
     }
-    addPanelAtRememberedPosition(id);
+    showPanel(id);
   }
 
   // Unlike openPanel, never closes an already-open-and-active panel — for
@@ -202,13 +216,7 @@
   // prompt command opening the Tags dock before filtering it), not a
   // toggle.
   export function ensurePanelOpen(id: string) {
-    if (!api) return;
-    const existing = api.getPanel(id);
-    if (existing) {
-      existing.api.setActive();
-      return;
-    }
-    addPanelAtRememberedPosition(id);
+    showPanel(id);
   }
 
   function persist() {

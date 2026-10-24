@@ -121,6 +121,26 @@ export function openFindReplace(prefill?: string) {
   editorRef?.openFindReplace(prefill);
 }
 
+let binderRef: { focusSelectedOrTop: () => void } | undefined;
+
+/** Called by BinderTree.svelte on mount/unmount, same pattern as
+ * `registerEditor`. */
+export function registerBinder(ref: typeof binderRef) {
+  binderRef = ref;
+}
+
+/** Ports `binder_panel.rs`'s `focus_requested` handling: focuses the
+ * currently open document's row if it's visible (not hidden inside a
+ * collapsed folder), or the project root's own row otherwise — called by
+ * DockLayout.svelte right after the Binder panel transitions from
+ * not-visible to visible (toggled on, or brought to front), matching the
+ * real app's own tab-to-front-plus-focus-request combo
+ * (`ToggleBinderFocus`/"Reveal in Binder"). A no-op if the Binder isn't
+ * actually mounted (e.g. called before DockLayout exists yet). */
+export function focusBinder() {
+  binderRef?.focusSelectedOrTop();
+}
+
 // Mirrors core::settings::Settings::record_recent_project exactly (most-
 // recent-first, de-duplicated, capped) — done here rather than as a Tauri
 // command since settingsStore is already loaded client-side and every

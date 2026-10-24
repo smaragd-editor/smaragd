@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import {
     type BinderNodeDto,
@@ -10,6 +11,7 @@
     recordMove,
     cycleBinderColorMode,
     restorePath,
+    registerBinder,
   } from "./stores/project.svelte";
   import { settingsStore } from "./stores/settings.svelte";
   import { showToast } from "./stores/toast.svelte";
@@ -111,6 +113,41 @@
   function isExpanded(path: string): boolean {
     return !collapsedPaths.has(path);
   }
+
+  // Mirrors binder_panel.rs's `visible_rows` filter: a row only counts as
+  // visible if every ancestor folder between it and the project root is
+  // expanded — walked via plain `/`-separated path prefixes rather than
+  // the node tree, since a path's ancestors are exactly its parent
+  // directories.
+  function isRowVisible(path: string): boolean {
+    let current = path;
+    while (current !== root) {
+      const idx = current.lastIndexOf("/");
+      if (idx < 0) return true;
+      current = current.slice(0, idx);
+      if (current.length < root.length) return true;
+      if (collapsedPaths.has(current)) return false;
+    }
+    return true;
+  }
+
+  let treeEl: HTMLElement | undefined;
+
+  /** Ports binder_panel.rs's `focus_requested` handling — called by
+   * `focusBinder()` (stores/project.svelte.ts) right after the Binder
+   * panel becomes visible. Focuses the open document's row if it's
+   * currently visible, or the project root's own row (the real app's
+   * "first visible row" fallback) otherwise. */
+  export function focusSelectedOrTop() {
+    const selected = project.selectedPath;
+    const target = selected && isRowVisible(selected) ? selected : root;
+    treeEl
+      ?.querySelector<HTMLElement>(`[data-binder-path="${CSS.escape(target)}"]`)
+      ?.focus();
+  }
+
+  onMount(() => registerBinder({ focusSelectedOrTop }));
+  onDestroy(() => registerBinder(undefined));
 
   // <details>'s own native toggle event — fired whenever its open state
   // actually flips, by user click (the triangle; folder-row name clicks
@@ -411,6 +448,7 @@
         <span
           class="name"
           class:selected={isMetadataSelected(n)}
+          data-binder-path={n.path}
           role="button"
           tabindex="-1"
           onclick={(e) => selectFolderRowForMetadata(e, n)}
@@ -474,7 +512,7 @@
     Color: {colorModeLabels[project.value?.binder_color_mode ?? "Off"]}
   </button>
 </div>
-<nav class="tree">
+<nav class="tree" bind:this={treeEl}>
   {@render node(tree)}
   {#if error}<p class="error">{error}</p>{/if}
 </nav>
