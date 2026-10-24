@@ -183,6 +183,11 @@ pub struct ProjectSummary {
     book_title: Option<String>,
     binder_color_mode: BinderColorMode,
     tree: BinderNodeDto,
+    /// `project::sanity_check::check`'s findings, for SanityCheckPrompt.svelte
+    /// to show once right after opening — see that module's doc comment.
+    /// Empty on the overwhelming common case of a perfectly consistent
+    /// project, so this costs nothing extra to always include.
+    sanity_check_issues: Vec<String>,
 }
 
 fn project_summary(project: &Project) -> ProjectSummary {
@@ -191,6 +196,7 @@ fn project_summary(project: &Project) -> ProjectSummary {
         book_title: project.meta.book_title.clone(),
         binder_color_mode: project.meta.binder_color_mode,
         tree: build_tree(project),
+        sanity_check_issues: smaragd_core::project::sanity_check::check(project),
     }
 }
 

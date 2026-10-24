@@ -5,6 +5,7 @@
   import PromptDialog from "./PromptDialog.svelte";
   import TemplatePickerDialog from "./TemplatePickerDialog.svelte";
   import ExternalConflictPrompt from "./ExternalConflictPrompt.svelte";
+  import SanityCheckPrompt from "./SanityCheckPrompt.svelte";
   import { viewport } from "./stores/viewport.svelte";
   import { loadSettings } from "./stores/settings.svelte";
   import { toast } from "./stores/toast.svelte";
@@ -38,6 +39,7 @@
   <PromptDialog />
   <TemplatePickerDialog />
   <ExternalConflictPrompt />
+  <SanityCheckPrompt />
   {#if toast.message}
     <div class="toast">{toast.message}</div>
   {/if}

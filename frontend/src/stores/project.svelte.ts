@@ -46,6 +46,7 @@ export type ProjectSummary = {
   book_title: string | null;
   binder_color_mode: BinderColorMode;
   tree: BinderNodeDto;
+  sanity_check_issues: string[];
 };
 
 export const project = $state<{
@@ -79,6 +80,17 @@ export const project = $state<{
  * promise-free reactive flag instead, since ExternalConflictPrompt.svelte
  * just reads it directly rather than awaiting a resolution. */
 export const externalConflict = $state<{ path: string | null }>({ path: null });
+
+/** `project::sanity_check::check`'s findings from the project that's open
+ * right now, shown once by SanityCheckPrompt.svelte then cleared on
+ * dismissal (`dismissSanityCheck`) — ports `SmaragdApp::sanity_check_issues`
+ * 1:1, set alongside `project.value` instead of living on it directly so
+ * dismissing it doesn't need to touch `ProjectSummary` itself. */
+export const sanityCheckIssues = $state<{ items: string[] }>({ items: [] });
+
+export function dismissSanityCheck() {
+  sanityCheckIssues.items = [];
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
@@ -147,6 +159,7 @@ export async function openProject(root: string) {
   try {
     project.value = await invoke<ProjectSummary>("project_open", { root });
     recordRecentProject(root);
+    sanityCheckIssues.items = project.value.sanity_check_issues;
     await runBackup(root, "open");
     startExternalWatch();
   } catch (err) {
@@ -166,6 +179,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
       templateId,
     });
     recordRecentProject(root);
+    sanityCheckIssues.items = project.value.sanity_check_issues;
     await runBackup(root, "open");
     startExternalWatch();
   } catch (err) {
@@ -182,6 +196,7 @@ export async function closeProject() {
   project.selectedPath = null;
   project.documentText = "";
   project.previewHtml = "";
+  dismissSanityCheck();
 }
 
 // External-change detection (app::external_watch): another program, a sync
