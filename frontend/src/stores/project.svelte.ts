@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { dockLayoutRegistry } from "./dockLayoutRegistry.svelte";
 import { showToast } from "./toast.svelte";
 import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
+import { showPrompt, showConfirm } from "./promptDialog.svelte";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -358,7 +359,7 @@ function currentFolder(): string {
 
 export async function newDocumentAtSelection() {
   if (!project.value) return;
-  const name = window.prompt("New document name:", "Untitled");
+  const name = await showPrompt("New document name:", "Untitled");
   if (!name) return;
   try {
     const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_create_document", {
@@ -375,7 +376,7 @@ export async function newDocumentAtSelection() {
 
 export async function newFolderAtSelection() {
   if (!project.value) return;
-  const name = window.prompt("New folder name:", "New Folder");
+  const name = await showPrompt("New folder name:", "New Folder");
   if (!name) return;
   try {
     const tree = await invoke<BinderNodeDto>("binder_create_folder", {
@@ -392,7 +393,7 @@ export async function newFolderAtSelection() {
 export async function renameSelection() {
   if (!project.value || !project.selectedPath) return;
   const currentName = project.selectedPath.split("/").pop()!.replace(/\.md$/, "");
-  const newName = window.prompt("Rename to:", currentName);
+  const newName = await showPrompt("Rename to:", currentName);
   if (!newName || newName === currentName) return;
   try {
     const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_rename", {
@@ -415,7 +416,7 @@ export async function moveSelectionTo() {
   if (!project.value || !project.selectedPath) return;
   const path = project.selectedPath;
   const name = path.split("/").pop()!.replace(/\.md$/, "");
-  const destination = window.prompt(`Move "${name}" to (absolute folder path):`, project.value.root);
+  const destination = await showPrompt(`Move "${name}" to (absolute folder path):`, project.value.root);
   if (!destination) return;
   try {
     const result = await invoke<{ tree: BinderNodeDto; path: string }>("binder_move", {
@@ -437,7 +438,7 @@ export async function deleteSelection() {
   const name = path.split("/").pop()!.replace(/\.md$/, "");
   try {
     const toTrash = await invoke<boolean>("deletes_to_trash", { root: project.value.root, path });
-    const confirmed = window.confirm(
+    const confirmed = await showConfirm(
       toTrash ? `Move "${name}" to Trash?` : `Delete "${name}"? This cannot be undone.`,
     );
     if (!confirmed) return;
@@ -461,7 +462,7 @@ export async function restorePath(path: string, recreate = false) {
     showToast("Restored");
   } catch (err) {
     const missing = /^ORIGINAL_FOLDER_MISSING:(.*)$/.exec(String(err));
-    if (missing && window.confirm(`"${missing[1]}" no longer exists. Recreate it and restore here?`)) {
+    if (missing && (await showConfirm(`"${missing[1]}" no longer exists. Recreate it and restore here?`))) {
       await restorePath(path, true);
     } else if (!missing) {
       showToast(`Couldn't restore: ${err}`);

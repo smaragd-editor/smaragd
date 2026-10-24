@@ -20,6 +20,7 @@
   import { showToast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
   import { exportRequest, requestExport, closeExportRequest } from "./stores/exportRequest.svelte";
+  import { showPrompt } from "./stores/promptDialog.svelte";
 
   // Desktop menu bar matching the real egui app's 8-menu structure
   // (app/src/app/menu_bar.rs) as closely as this port's actual
@@ -163,7 +164,7 @@
   // on every platform Tauri targets, so this is safe despite not being a
   // "real" path-join.
   async function pickAndCreateProject() {
-    const name = window.prompt("New project name:");
+    const name = await showPrompt("New project name:");
     if (!name) return;
     const parent = await openFileDialog({ directory: true, multiple: false });
     if (typeof parent !== "string") return;
@@ -217,7 +218,7 @@
   }
 
   async function saveCurrentLayout() {
-    const name = window.prompt("Save current layout as:");
+    const name = await showPrompt("Save current layout as:");
     if (!name) return;
     dockLayoutRegistry.api?.saveCurrentLayoutAs(name);
     showToast(`Layout "${name}" saved`);

@@ -14,6 +14,7 @@
   import { settingsStore } from "./stores/settings.svelte";
   import { showToast } from "./stores/toast.svelte";
   import { requestExport } from "./stores/exportRequest.svelte";
+  import { showPrompt, showConfirm } from "./stores/promptDialog.svelte";
 
   const colorModeLabels: Record<string, string> = {
     Off: "Off",
@@ -71,7 +72,7 @@
   }
 
   async function newDocument(parent: string) {
-    const name = window.prompt("New document name:", "Untitled");
+    const name = await showPrompt("New document name:", "Untitled");
     if (!name) return;
     const result = await run(
       invoke<{ tree: BinderNodeDto; path: string }>("binder_create_document", {
@@ -87,7 +88,7 @@
   }
 
   async function newFolder(parent: string) {
-    const name = window.prompt("New folder name:", "New Folder");
+    const name = await showPrompt("New folder name:", "New Folder");
     if (!name) return;
     const newTree = await run(
       invoke<BinderNodeDto>("binder_create_folder", { root, parent, name }),
@@ -96,7 +97,7 @@
   }
 
   async function rename(path: string, currentName: string) {
-    const newName = window.prompt("Rename to:", currentName);
+    const newName = await showPrompt("Rename to:", currentName);
     if (!newName || newName === currentName) return;
     const result = await run(
       invoke<{ tree: BinderNodeDto; path: string }>("binder_rename", { root, path, newName }),
@@ -108,7 +109,7 @@
   }
 
   async function remove(path: string, name: string) {
-    if (!window.confirm(`Delete "${name}"?`)) return;
+    if (!(await showConfirm(`Delete "${name}"?`))) return;
     const newTree = await run(invoke<BinderNodeDto>("binder_delete", { root, path }));
     if (newTree) onTreeChange(newTree);
   }
@@ -122,7 +123,7 @@
   // "ship the interaction, not the polish" tradeoff every other action
   // here already makes.
   async function moveTo(path: string, name: string) {
-    const destination = window.prompt(`Move "${name}" to (absolute folder path):`, root);
+    const destination = await showPrompt(`Move "${name}" to (absolute folder path):`, root);
     if (!destination) return;
     const result = await run(
       invoke<{ tree: BinderNodeDto; path: string }>("binder_move", { root, path, newParent: destination }),
@@ -233,7 +234,7 @@
   }
 
   async function createFromTemplate(parent: string, template: { path: string; name: string }) {
-    const name = window.prompt("New document name:", template.name);
+    const name = await showPrompt("New document name:", template.name);
     if (!name) return;
     const result = await run(
       invoke<{ tree: BinderNodeDto; path: string; cursor: number | null }>(

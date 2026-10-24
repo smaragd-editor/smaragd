@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import ProjectView from "./ProjectView.svelte";
   import MenuBar from "./MenuBar.svelte";
+  import PromptDialog from "./PromptDialog.svelte";
   import { viewport } from "./stores/viewport.svelte";
   import { loadSettings } from "./stores/settings.svelte";
   import { toast } from "./stores/toast.svelte";
@@ -27,6 +28,7 @@
   <div class="body">
     <ProjectView />
   </div>
+  <PromptDialog />
   {#if toast.message}
     <div class="toast">{toast.message}</div>
   {/if}
