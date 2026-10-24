@@ -19,6 +19,7 @@ pub mod fuzzy;
 pub mod git;
 pub mod import;
 pub mod markdown;
+pub mod plugins;
 pub mod pomodoro;
 pub mod project;
 pub mod project_template;

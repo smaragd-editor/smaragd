@@ -24,6 +24,7 @@ impl Project {
         path: &Path,
         recreate_missing_folder: bool,
     ) -> Result<PathBuf, RestoreError> {
+        ensure_path_within_root(&self.root, path)?;
         let key = relative_key(&self.root, path);
         let Some(original) = self
             .meta

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
-  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import {
@@ -16,10 +16,17 @@
   import AboutDialog from "./AboutDialog.svelte";
   import { dockLayoutRegistry } from "./stores/dockLayoutRegistry.svelte";
   import { settingsStore, saveSettingsDebounced } from "./stores/settings.svelte";
-  import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction, registerShortcutHandler } from "./shortcuts";
+  import {
+    SHORTCUT_ACTIONS,
+    effectiveCombo,
+    runShortcutAction,
+    registerShortcutHandler,
+    refreshPluginShortcuts,
+  } from "./shortcuts";
   import { showToast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
   import { exportRequest, requestExport, closeExportRequest } from "./stores/exportRequest.svelte";
+  import { noteRequest, closeNoteRequest } from "./stores/noteRequest.svelte";
   import {
     settingsRequest,
     requestSettings,
@@ -40,12 +47,12 @@
   // notImplemented() placeholders until this pass, listed for structural
   // fidelity first and wired for real once a user asked for them.
   //
-  // Still genuinely stubbed, deliberately: Reload Plugins/Enable Project
-  // Plugins — different in kind, not just unfinished: there is no plugin
-  // engine anywhere in this Tauri port (no Rhai scripting, no :command
-  // registration), so there's nothing to reload. It's left as a clear
-  // "no plugin engine in this build" message rather than faked as if a
-  // real action were just missing its wiring.
+  // Reload Plugins/Enable Project Plugins now call the real Rhai plugin
+  // engine (smaragd_core::plugins, ported from the egui app's own
+  // app/src/plugins.rs) via app-tauri's plugins_reload/
+  // set_project_plugins_enabled commands — see CommandPrompt.svelte for the
+  // `:` command side and shortcuts.ts's refreshPluginShortcuts for the
+  // shortcut side.
   //
   // New Project prompts for a name then reuses the same folder picker Open
   // Project does, rather than a dedicated creation wizard. Exit flushes any
@@ -435,8 +442,30 @@
     }
   }
 
-  function reloadPlugins() {
-    showToast("No plugin engine in this build — there's nothing to reload yet.");
+  async function reloadPlugins() {
+    if (!project.value) return;
+    try {
+      const errors = await invoke<string[]>("plugins_reload", { root: project.value.root });
+      showToast(errors.length > 0 ? errors.join("; ") : "Plugins reloaded");
+    } catch (err) {
+      showToast(`Couldn't reload plugins: ${err}`);
+    } finally {
+      await refreshPluginShortcuts();
+    }
+  }
+
+  async function toggleProjectPlugins() {
+    if (!project.value) return;
+    const root = project.value.root;
+    try {
+      const settings = await invoke<{ plugins_enabled: boolean }>("project_settings", { root });
+      const enabled = !settings.plugins_enabled;
+      await invoke("set_project_plugins_enabled", { root, enabled });
+      showToast(enabled ? "Project plugins enabled" : "Project plugins disabled");
+      await reloadPlugins();
+    } catch (err) {
+      showToast(`Couldn't toggle project plugins: ${err}`);
+    }
   }
 
   // The inverse of the New Project template picker: snapshots the open
@@ -463,6 +492,14 @@
     showToast(`Layout "${name}" saved`);
   }
 
+  // Moved here from a dedicated toolbar button in ProjectView.svelte —
+  // Close Project already lived in this menu, so the one remaining
+  // top-bar button joined it rather than staying the only action still
+  // sitting outside the menu.
+  function revealProjectFolder() {
+    if (project.value) revealItemInDir(project.value.root);
+  }
+
   function layoutItems(): Item[] {
     const names = dockLayoutRegistry.api?.listSavedLayouts() ?? [];
     if (names.length === 0) {
@@ -487,6 +524,11 @@
           label: "Close Project",
           shortcutId: "close_project",
           action: closeProject,
+          disabled: !hasProject,
+        },
+        {
+          label: "Reveal in File Manager",
+          action: revealProjectFolder,
           disabled: !hasProject,
         },
         { separator: true },
@@ -684,8 +726,12 @@
         },
         { label: "Sync Now", shortcutId: "sync_now", action: () => runShortcutAction("sync_now") },
         { separator: true },
-        { label: "Reload Plugins", action: reloadPlugins },
-        { label: "Enable Project Plugins", action: reloadPlugins },
+        { label: "Reload Plugins", action: reloadPlugins, disabled: !hasProject },
+        {
+          label: "Enable Project Plugins",
+          action: toggleProjectPlugins,
+          disabled: !hasProject,
+        },
       ],
     },
     {
@@ -751,8 +797,7 @@
       mnemonic: "W",
       items: () => [
         { label: "Save Current Layout…", action: saveCurrentLayout, disabled: !hasProject },
-        { label: "Layouts", action: () => {}, disabled: true },
-        ...layoutItems(),
+        { label: "Layouts", submenu: layoutItems },
         { separator: true },
         {
           label: "Restore Default Layout",
@@ -1050,6 +1095,17 @@
 {#if showGitCommit}
   {#await import("./GitCommitDialog.svelte") then { default: GitCommitDialog }}
     <GitCommitDialog onClose={() => (showGitCommit = false)} andPush={gitCommitAndPush} />
+  {/await}
+{/if}
+
+{#if noteRequest.open && noteRequest.path}
+  {#await import("./NotePromptDialog.svelte") then { default: NotePromptDialog }}
+    <NotePromptDialog
+      onClose={closeNoteRequest}
+      path={noteRequest.path}
+      line={noteRequest.line}
+      column={noteRequest.column}
+    />
   {/await}
 {/if}
 

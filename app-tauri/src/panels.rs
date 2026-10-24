@@ -251,6 +251,17 @@ pub fn bookmark_delete(root: String, id: String) -> Result<(), String> {
     project.delete_bookmark(id).map_err(|e| e.to_string())
 }
 
+/// Adds a bookmark at `(path, line)` if none exists there yet, removes it
+/// otherwise — backs the Toggle Bookmark shortcut. Returns whether the line
+/// is bookmarked after the call (for the status toast).
+#[tauri::command]
+pub fn bookmark_toggle(root: String, path: String, line: usize) -> Result<bool, String> {
+    let mut project = load(&root)?;
+    project
+        .toggle_bookmark(Path::new(&path), line)
+        .map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 pub struct ResolvedNoteDto {
     id: String,
@@ -283,6 +294,42 @@ pub fn note_delete(root: String, id: String) -> Result<(), String> {
     let mut project = load(&root)?;
     let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
     project.delete_note(id).map_err(|e| e.to_string())
+}
+
+/// The text of the note at the exact `(path, line, column)` position, if
+/// one exists — backs the Add Note at Cursor shortcut's prompt, which
+/// pre-fills from any note already at that position (editing in place)
+/// rather than always starting blank.
+#[tauri::command]
+pub fn note_text_at(
+    root: String,
+    path: String,
+    line: usize,
+    column: usize,
+) -> Result<Option<String>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .notes_at(Path::new(&path), line)
+        .into_iter()
+        .find(|n| n.column == column)
+        .map(|n| n.text.clone()))
+}
+
+/// Adds a note at `(path, line, column)` if none exists there yet, else
+/// replaces its text — an empty `text` deletes it instead. Backs the Add
+/// Note at Cursor shortcut's save.
+#[tauri::command]
+pub fn note_upsert(
+    root: String,
+    path: String,
+    line: usize,
+    column: usize,
+    text: String,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .upsert_note(Path::new(&path), line, column, text)
+        .map_err(|e| e.to_string())
 }
 
 /// One bar in a day-window chart — `label` is the already-formatted x-axis

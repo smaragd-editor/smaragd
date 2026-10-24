@@ -3,10 +3,16 @@
   import { invoke } from "@tauri-apps/api/core";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { settingsStore, saveSettingsDebounced, refreshSpellCheckCatalog } from "./stores/settings.svelte";
-  import { SHORTCUT_ACTIONS, SHORTCUT_CATEGORIES, effectiveCombo, setShortcut } from "./shortcuts";
+  import {
+    SHORTCUT_ACTIONS,
+    SHORTCUT_CATEGORIES,
+    effectiveCombo,
+    effectivePluginCombo,
+    setShortcut,
+  } from "./shortcuts";
   import type { KeyCombo } from "./stores/settings.svelte";
   import { applyTheme } from "./stores/theme.svelte";
-  import { recheckSpelling } from "./stores/project.svelte";
+  import { recheckSpelling, project } from "./stores/project.svelte";
 
   // Settings dialog matching the real egui app's 9-category structure
   // (app/src/ui/settings_panel.rs) — General, Appearance, Editor,
@@ -21,6 +27,20 @@
     $props();
 
   let downloading = $state<string | null>(null);
+
+  // Loaded once on open (same one-time-read stance as `active` above — this
+  // dialog is remounted fresh each time) rather than kept live: a plugin
+  // reload while Settings is open is rare enough that re-fetching isn't
+  // worth the complexity, and "Reload Plugins" already shows its own toast.
+  let pluginShortcutDefaults = $state<{ name: string; combo: KeyCombo }[]>([]);
+  onMount(() => {
+    if (!project.value) return;
+    invoke<{ name: string; combo: KeyCombo }[]>("plugins_shortcut_defaults", {
+      root: project.value.root,
+    })
+      .then((r) => (pluginShortcutDefaults = r))
+      .catch(() => {});
+  });
 
   async function downloadDictionary(language: string) {
     downloading = language;
@@ -595,6 +615,23 @@
                     </td>
                   </tr>
                 {/each}
+              {/each}
+              {#each pluginShortcutDefaults as plugin (plugin.name)}
+                <tr>
+                  <td class="muted">Plugin</td>
+                  <td>:{plugin.name}</td>
+                  <td>
+                    {#if recordingFor === plugin.name}
+                      <em>Press a new shortcut… (Esc to cancel)</em>
+                    {:else}
+                      {comboLabel(effectivePluginCombo(plugin.name, plugin.combo))}
+                    {/if}
+                  </td>
+                  <td class="actions">
+                    <button onclick={() => startRecording(plugin.name)}>Change</button>
+                    <button onclick={() => setShortcut(plugin.name, null)}>Clear</button>
+                  </td>
+                </tr>
               {/each}
             </tbody>
           </table>

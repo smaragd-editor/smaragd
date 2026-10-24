@@ -79,6 +79,7 @@ impl Project {
         filename: &str,
         contents: &str,
     ) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, parent)?;
         let filename = ensure_md_extension(filename);
         ensure_simple_child_name(&filename)?;
         let path = parent.join(&filename);
@@ -93,6 +94,7 @@ impl Project {
     /// Create a new empty folder under `parent`, record it, and rescan. Refuses to
     /// overwrite an existing file or folder at the destination.
     pub fn create_folder(&mut self, parent: &Path, name: &str) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, parent)?;
         ensure_simple_child_name(name)?;
         let path = parent.join(name);
         ensure_does_not_exist(self.store.as_ref(), &path)?;

@@ -28,6 +28,7 @@ import {
   goForwardDocument,
   flushBeforeExit,
   recheckSpelling,
+  runPluginCommand,
 } from "./stores/project.svelte";
 
 // Port of the real egui app's ShortcutAction system (app/src/shortcuts.rs,
@@ -51,12 +52,15 @@ export type ShortcutActionDef = {
   label: string;
   category: ShortcutCategory;
   default: KeyCombo;
-  /** Reserved for an editor-cursor-local action (wikilink-follow, bookmark-
-   * toggle, add-note-at-cursor) in the real app — none of those have a real
-   * implementation here yet (no cursor-position API from CodeMirror into
-   * the backend), so this only keeps their default bindings reserved
-   * (protected from being shadowed by a global action with an overlapping,
-   * less-specific combo) rather than actually dispatching anything. */
+  /** An editor-cursor-local action (wikilink-follow, toggle-bookmark,
+   * add-note-at-cursor) — needs CodeMirror's own cursor, which only
+   * MarkdownEditor.svelte has, so it's consumed there via its own keymap
+   * (see `inlineShortcutsKeymap`) instead of this file's global
+   * `handleGlobalKeydown`. Still real data here: `effectiveCombo` resolves
+   * its binding the same way as any other action (Settings remapping,
+   * conflict protection against global actions with an overlapping,
+   * less-specific combo), MarkdownEditor.svelte just reads it directly
+   * rather than being dispatched through `handleGlobalKeydown`. */
   inlineConsumed?: boolean;
 };
 
@@ -165,14 +169,59 @@ function specificity(combo: KeyCombo): number {
   return (combo.ctrl_or_cmd ? 1 : 0) + (combo.shift ? 1 : 0) + (combo.alt ? 1 : 0);
 }
 
+/** The user's override from `Settings.shortcuts` for `id` if one exists
+ * (including an explicit unbind, represented as `undefined` — see the
+ * Settings dialog's `setShortcut`), else `fallback`. Shared by
+ * `effectiveCombo` (built-in actions) and plugin-shortcut resolution below —
+ * both key into the same map (see `Settings.shortcuts`'s own doc comment
+ * in core/src/settings.rs for why one map covers both). */
+function resolveCombo(id: string, fallback: KeyCombo): KeyCombo | undefined {
+  const override = settingsStore.value.shortcuts[id];
+  if (override) return override;
+  if (id in settingsStore.value.shortcuts) return undefined; // explicitly unbound
+  return fallback;
+}
+
 /** Resolved effective binding for `action`: the user's override from
  * Settings if one exists (including an explicit unbind, represented as
  * `undefined` in the map — see the Settings dialog), else its default. */
 export function effectiveCombo(action: ShortcutActionDef): KeyCombo | undefined {
-  const override = settingsStore.value.shortcuts[action.id];
-  if (override) return override;
-  if (action.id in settingsStore.value.shortcuts) return undefined; // explicitly unbound
-  return action.default;
+  return resolveCombo(action.id, action.default);
+}
+
+/** A loaded plugin command's own declared default shortcut
+ * (`register_shortcut`), keyed by command name — refreshed by
+ * `refreshPluginShortcuts`, which also doubles as the plugin
+ * Command Prompt/tab-completion source of truth (`plugins_list_commands`
+ * lives separately, fetched per-component, since only a shortcut needs
+ * this one). */
+let pluginShortcuts: { name: string; combo: KeyCombo }[] = [];
+
+/** Re-fetches the open project's loaded plugins' declared default
+ * shortcuts — called whenever the open project changes and after a
+ * "Reload Plugins"/"Enable Project Plugins" menu action, mirroring the
+ * real egui app's own `reload_plugins` recomputing
+ * `compute_effective_plugin_shortcuts` every time plugins (re)load. */
+export async function refreshPluginShortcuts() {
+  if (!project.value) {
+    pluginShortcuts = [];
+    return;
+  }
+  try {
+    pluginShortcuts = await invoke<{ name: string; combo: KeyCombo }[]>(
+      "plugins_shortcut_defaults",
+      { root: project.value.root },
+    );
+  } catch {
+    pluginShortcuts = [];
+  }
+}
+
+/** The user's override (or explicit unbind) for a plugin command's default
+ * shortcut — same resolution `effectiveCombo` does for a built-in action,
+ * exported for the Settings dialog's remapping UI. */
+export function effectivePluginCombo(name: string, fallback: KeyCombo): KeyCombo | undefined {
+  return resolveCombo(name, fallback);
 }
 
 export function setShortcut(actionId: string, combo: KeyCombo | null) {
@@ -275,20 +324,49 @@ export function runShortcutAction(actionId: string) {
  * exists to enforce (see matchesCombo's doc comment for why order matters:
  * without it, a 1-modifier binding could silently steal a keypress meant
  * for an overlapping 2-modifier one). */
+type DispatchCandidate = { id: string; combo: KeyCombo; run: () => void };
+
+// TEMPORARY — diagnosing the F3/Shift+F3-does-nothing-while-editor-focused
+// report. Logs every keydown this function actually receives (so a report
+// of "pressing F3 did nothing" can be told apart from "the event never
+// reached the page at all" — e.g. the webview's own native Find-in-page
+// accelerator consuming F3 before any DOM listener sees it — vs. "it
+// arrived but no shortcut matched it"). Safe to strip once that's known;
+// gated behind a single flag so it's a one-line revert.
+const DEBUG_SHORTCUTS = true;
+
 export function handleGlobalKeydown(event: KeyboardEvent) {
   if (!dockLayoutRegistry.api && !project.value) return; // no project open yet — most actions are meaningless
-  const candidates = SHORTCUT_ACTIONS.filter((a) => !a.inlineConsumed)
+  if (DEBUG_SHORTCUTS) {
+    console.debug(
+      `[shortcuts] keydown code=${event.code} key=${event.key} ctrl=${event.ctrlKey} meta=${event.metaKey} shift=${event.shiftKey} alt=${event.altKey} target=${(event.target as HTMLElement | null)?.tagName}${(event.target as HTMLElement | null)?.className ? "." + (event.target as HTMLElement).className : ""}`,
+    );
+  }
+  const builtins: DispatchCandidate[] = SHORTCUT_ACTIONS.filter((a) => !a.inlineConsumed)
     .map((a) => ({ action: a, combo: effectiveCombo(a) }))
     .filter((c): c is { action: ShortcutActionDef; combo: KeyCombo } => !!c.combo && c.combo.key !== "")
-    .sort((a, b) => specificity(b.combo) - specificity(a.combo));
+    .map((c) => ({ id: c.action.id, combo: c.combo, run: () => runShortcutAction(c.action.id) }));
+  // `:` command names are already globally unique across loaded plugins
+  // (see core::plugins::load's own conflict handling), so no qualification
+  // needed here — matches the real app's own merged built-in+plugin
+  // shortcut list (shortcuts.rs's `sorted_by_specificity` doc comment).
+  const plugins: DispatchCandidate[] = pluginShortcuts
+    .map((p) => ({ name: p.name, combo: effectivePluginCombo(p.name, p.combo) }))
+    .filter((c): c is { name: string; combo: KeyCombo } => !!c.combo && c.combo.key !== "")
+    .map((c) => ({ id: `plugin:${c.name}`, combo: c.combo, run: () => void runPluginCommand(c.name, "") }));
+  const candidates = [...builtins, ...plugins].sort(
+    (a, b) => specificity(b.combo) - specificity(a.combo),
+  );
 
-  for (const { action, combo } of candidates) {
+  for (const { id, combo, run } of candidates) {
     if (matchesCombo(event, combo)) {
+      if (DEBUG_SHORTCUTS) console.debug(`[shortcuts] matched ${id}`, combo);
       event.preventDefault();
-      runShortcutAction(action.id);
+      run();
       return;
     }
   }
+  if (DEBUG_SHORTCUTS) console.debug("[shortcuts] no candidate matched");
 }
 
 // --- Built-in handlers for actions with a real implementation already ---

@@ -1,9 +1,10 @@
 import { filterCandidates } from "./autocomplete";
 
 // A vim/Helix-style `:` command line — port of app/src/ui/command_prompt.rs's
-// parse_command/completions/apply_completion, minus Command::Plugin (no
-// plugin engine in this port, same reason MenuBar's own Reload Plugins stays
-// a stub).
+// parse_command/completions/apply_completion, including Command::Plugin: any
+// name that isn't a built-in falls through to a loaded plugin's registered
+// `:` command (checked only once no built-in matches, so a plugin can never
+// shadow one — see parseCommand's own doc comment).
 export type DarkModeChoice = "dark" | "light" | "system";
 
 export type GitCommand =
@@ -25,7 +26,8 @@ export type Command =
   | { kind: "find"; query: string }
   | { kind: "tag"; query: string }
   | { kind: "toggleSpellCheck" }
-  | { kind: "daily" };
+  | { kind: "daily" }
+  | { kind: "plugin"; name: string; arg: string };
 
 export type ParseResult = { ok: true; command: Command } | { ok: false; error: string };
 
@@ -43,7 +45,10 @@ function splitFirst(input: string): [string, string] {
   return [input.slice(0, idx), input.slice(idx).trimStart()];
 }
 
-export function parseCommand(input: string): ParseResult {
+/** `pluginCommands` is checked only once none of the built-in names match,
+ * so a plugin can never shadow a built-in command — matches the real app's
+ * own `parse_command`'s doc comment. */
+export function parseCommand(input: string, pluginCommands: string[] = []): ParseResult {
   const trimmed = input.trim().replace(/^:/, "").trim();
   if (!trimmed) return { ok: false, error: "Empty command" };
   const [name, rest] = splitFirst(trimmed);
@@ -89,6 +94,9 @@ export function parseCommand(input: string): ParseResult {
     case "daily":
       return { ok: true, command: { kind: "daily" } };
     default:
+      if (pluginCommands.includes(name)) {
+        return { ok: true, command: { kind: "plugin", name, arg: rest } };
+      }
       return { ok: false, error: `Unknown command: ${name}` };
   }
 }
@@ -128,11 +136,12 @@ export function completions(
   themeIds: string[],
   tagNames: string[],
   gitEnabled: boolean,
+  pluginCommands: string[] = [],
 ): string[] {
   const target = completionTarget(input);
   let matches: string[];
   if (target.kind === "commandName") {
-    matches = filterCandidates(COMMAND_NAMES, input);
+    matches = filterCandidates([...COMMAND_NAMES, ...pluginCommands], input);
     if (!gitEnabled) matches = matches.filter((name) => name !== "git");
   } else if (target.command === "o" || target.command === "open") {
     matches = filterCandidates(noteTitles, target.query);

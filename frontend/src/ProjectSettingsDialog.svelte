@@ -1,22 +1,30 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
   import { project, onTreeChange } from "./stores/project.svelte";
   import type { BinderColorMode, BinderNodeDto, FolderRole } from "./stores/project.svelte";
   import { showToast } from "./stores/toast.svelte";
 
-  // A bounded subset of the real egui app's 5-category Project Settings
-  // panel (app/src/ui/project_settings_panel.rs): Binder, Daily Notes,
-  // Folder Roles, and Status/POV colors. Left out: Git auto-commit config,
-  // the Sync "also sync non-text files" toggle, Attachments destination,
-  // and the Daily Notes template picker — each its own chunk of core
-  // methods with no existing command either, same shape as what's here,
-  // just not wired yet.
+  // The real egui app's full 5-category Project Settings panel
+  // (app/src/ui/project_settings_panel.rs): Git, Sync, Binder, Attachments,
+  // Daily Notes — plus Folder Roles and Status/POV colors, shown in this
+  // same dialog there too. Left out of Attachments, deliberately: the
+  // clipboard image paste size limit, a separate toggle this pass didn't
+  // need to touch.
   let { onClose, initialCategory = null }: { onClose: () => void; initialCategory?: string | null } =
     $props();
 
-  type Category = "Binder" | "DailyNotes" | "FolderRoles" | "Colors";
-  const categories: Category[] = ["Binder", "DailyNotes", "FolderRoles", "Colors"];
+  type Category = "Git" | "Sync" | "Binder" | "Attachments" | "DailyNotes" | "FolderRoles" | "Colors";
+  const categories: Category[] = [
+    "Git",
+    "Sync",
+    "Binder",
+    "Attachments",
+    "DailyNotes",
+    "FolderRoles",
+    "Colors",
+  ];
   // svelte-ignore state_referenced_locally -- deliberately a one-time read:
   // this dialog is remounted fresh each time it opens, so `active` should
   // seed from whatever category the opener asked for, not keep tracking it.
@@ -55,18 +63,30 @@
   }
 
   type FolderRoleEntry = { path: string; role: FolderRole };
+  type AttachmentDestination = "SameAsDocument" | "ConfiguredFolder";
   type ProjectSettings = {
     binder_color_mode: BinderColorMode;
     daily_notes_enabled: boolean;
     daily_notes_folder: string;
     daily_note_filename_format: string;
+    daily_note_template: string | null;
     folder_roles: FolderRoleEntry[];
     status_colors: Record<string, string>;
     pov_colors: Record<string, string>;
+    git_enabled: boolean;
+    git_auto_commit_enabled: boolean;
+    git_auto_commit_interval_minutes: number;
+    git_auto_commit_push_enabled: boolean;
+    sync_files: boolean;
+    attachment_destination: AttachmentDestination;
+    attachments_folder: string | null;
   };
 
   let settings = $state<ProjectSettings | null>(null);
   let error = $state<string | null>(null);
+
+  type TemplateDocument = { path: string; name: string };
+  let templateDocuments = $state<TemplateDocument[]>([]);
 
   const BINDER_COLOR_MODES: BinderColorMode[] = ["Off", "Status", "Pov", "WordCountProgress"];
   const BINDER_COLOR_MODE_LABELS: Record<BinderColorMode, string> = {
@@ -82,6 +102,9 @@
     if (!project.value) return;
     try {
       settings = await invoke<ProjectSettings>("project_settings", { root: project.value.root });
+      templateDocuments = await invoke<TemplateDocument[]>("template_documents", {
+        root: project.value.root,
+      });
     } catch (err) {
       error = String(err);
     }
@@ -129,6 +152,71 @@
         folder: settings.daily_notes_folder,
         filenameFormat: settings.daily_note_filename_format,
       });
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function setDailyNoteTemplate(path: string | null) {
+    if (!project.value || !settings) return;
+    try {
+      await invoke("set_daily_note_template", { root: project.value.root, path });
+      settings.daily_note_template = path;
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function saveGitAutoCommit() {
+    if (!project.value || !settings) return;
+    try {
+      await invoke("set_git_auto_commit", {
+        root: project.value.root,
+        enabled: settings.git_auto_commit_enabled,
+        intervalMinutes: settings.git_auto_commit_interval_minutes,
+        pushEnabled: settings.git_auto_commit_push_enabled,
+      });
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function saveSyncFiles() {
+    if (!project.value || !settings) return;
+    try {
+      await invoke("set_sync_files", { root: project.value.root, enabled: settings.sync_files });
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function setAttachmentDestination(destination: AttachmentDestination) {
+    if (!project.value || !settings) return;
+    try {
+      await invoke("set_attachment_destination", { root: project.value.root, destination });
+      settings.attachment_destination = destination;
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function pickAttachmentsFolder() {
+    if (!project.value || !settings) return;
+    const picked = await openFolderDialog({ directory: true, defaultPath: project.value.root });
+    if (typeof picked !== "string") return;
+    try {
+      await invoke("set_attachments_folder", { root: project.value.root, path: picked });
+      settings.attachments_folder = picked;
+    } catch (err) {
+      showToast(String(err));
+    }
+  }
+
+  async function clearAttachmentsFolder() {
+    if (!project.value || !settings) return;
+    try {
+      await invoke("set_attachments_folder", { root: project.value.root, path: null });
+      settings.attachments_folder = null;
     } catch (err) {
       showToast(String(err));
     }
@@ -211,6 +299,50 @@
           <p class="error">{error}</p>
         {:else if !settings}
           <p>Loading…</p>
+        {:else if active === "Git"}
+          {#if !settings.git_enabled}
+            <p class="note">Enable git support for this project from the Versions menu first.</p>
+          {:else}
+            <label class="row">
+              <input
+                type="checkbox"
+                bind:checked={settings.git_auto_commit_enabled}
+                onchange={saveGitAutoCommit}
+              />
+              Automatically commit changes
+            </label>
+            <label class="row" class:disabled={!settings.git_auto_commit_enabled}>
+              Every
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                disabled={!settings.git_auto_commit_enabled}
+                bind:value={settings.git_auto_commit_interval_minutes}
+                onchange={saveGitAutoCommit}
+              />
+              minutes
+            </label>
+            <label class="row" class:disabled={!settings.git_auto_commit_enabled}>
+              <input
+                type="checkbox"
+                disabled={!settings.git_auto_commit_enabled}
+                bind:checked={settings.git_auto_commit_push_enabled}
+                onchange={saveGitAutoCommit}
+              />
+              Push after each automatic commit
+            </label>
+          {/if}
+        {:else if active === "Sync"}
+          <label class="row">
+            <input type="checkbox" bind:checked={settings.sync_files} onchange={saveSyncFiles} />
+            Also sync images, PDFs and other files
+          </label>
+          <p class="note">
+            Every other file in the project folder, whole, up to the server's size limit. A
+            project setting: it applies on every device syncing this project. Pairing, live
+            status and devices are managed from the Sync dock tab.
+          </p>
         {:else if active === "Binder"}
           <p class="note">Which value colors each Binder row.</p>
           {#each BINDER_COLOR_MODES as mode (mode)}
@@ -224,6 +356,35 @@
               {BINDER_COLOR_MODE_LABELS[mode]}
             </label>
           {/each}
+        {:else if active === "Attachments"}
+          <p class="note">Save pasted/dropped images and files:</p>
+          <label class="row">
+            <input
+              type="radio"
+              name="attachment-destination"
+              checked={settings.attachment_destination === "SameAsDocument"}
+              onchange={() => setAttachmentDestination("SameAsDocument")}
+            />
+            In the same folder as the document
+          </label>
+          <label class="row">
+            <input
+              type="radio"
+              name="attachment-destination"
+              checked={settings.attachment_destination === "ConfiguredFolder"}
+              onchange={() => setAttachmentDestination("ConfiguredFolder")}
+            />
+            In a specific folder
+          </label>
+          {#if settings.attachment_destination === "ConfiguredFolder"}
+            <label class="row">
+              <input type="text" readonly value={settings.attachments_folder ?? "(not set)"} />
+              <button onclick={pickAttachmentsFolder}>Browse…</button>
+              {#if settings.attachments_folder}
+                <button onclick={clearAttachmentsFolder}>Reset</button>
+              {/if}
+            </label>
+          {/if}
         {:else if active === "DailyNotes"}
           <label class="row">
             <input type="checkbox" bind:checked={settings.daily_notes_enabled} onchange={saveDailyNotes} />
@@ -236,6 +397,18 @@
           <label class="row">
             Filename format
             <input type="text" bind:value={settings.daily_note_filename_format} onchange={saveDailyNotes} />
+          </label>
+          <label class="row">
+            Template
+            <select
+              value={settings.daily_note_template ?? ""}
+              onchange={(e) => setDailyNoteTemplate(e.currentTarget.value || null)}
+            >
+              <option value="">(None — blank note)</option>
+              {#each templateDocuments as doc (doc.path)}
+                <option value={doc.path}>{doc.name}</option>
+              {/each}
+            </select>
           </label>
         {:else if active === "FolderRoles"}
           <p class="note">Research/Trash/Templates/World: at most one folder at a time. Manuscript: any number.</p>
@@ -360,6 +533,14 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
+  }
+
+  .row.disabled {
+    opacity: 0.5;
+  }
+
+  .row input[type="number"] {
+    width: 4.5rem;
   }
 
   .note {

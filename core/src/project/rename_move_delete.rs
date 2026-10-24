@@ -12,6 +12,7 @@ impl Project {
     /// extension; a folder is renamed as-is), updating manual ordering and rescanning.
     /// Refuses to overwrite an existing file or folder at the destination.
     pub fn rename(&mut self, path: &Path, new_name: &str) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, path)?;
         let parent = path
             .parent()
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
@@ -121,6 +122,7 @@ impl Project {
     /// removing it from disk — see [`Project::move_to_trash`]. Otherwise permanently
     /// removes it, as if there were no Trash configured.
     pub fn delete(&mut self, path: &Path) -> io::Result<()> {
+        ensure_path_within_root(&self.root, path)?;
         if self.deletes_to_trash(path) {
             let trash = self.trash_path().expect("checked by deletes_to_trash");
             return self.move_to_trash(path, &trash);
@@ -144,6 +146,8 @@ impl Project {
     /// `NameCollision::Refuse` would otherwise reject this as a collision with
     /// the item's own still-existing path.
     pub fn move_item(&mut self, path: &Path, new_parent: &Path) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, path)?;
+        ensure_path_within_root(&self.root, new_parent)?;
         if new_parent.starts_with(path) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -173,6 +177,8 @@ impl Project {
     /// moving an item before itself, or a folder into itself/one of its own
     /// subfolders, same reasoning as `move_item`.
     pub fn move_item_before(&mut self, path: &Path, before: &Path) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, path)?;
+        ensure_path_within_root(&self.root, before)?;
         if path == before {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

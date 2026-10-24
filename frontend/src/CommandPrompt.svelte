@@ -7,6 +7,8 @@
     createDocumentAtSelection,
     openFindReplace,
     openDailyNote,
+    runPluginCommand,
+    findDocumentByStem,
   } from "./stores/project.svelte";
   import type { BinderNodeDto } from "./stores/project.svelte";
   import { runShortcutAction } from "./shortcuts";
@@ -28,8 +30,7 @@
   // instead for a while (a simplified substitute, by this component's own
   // earlier doc comment); Search Everywhere's Actions tab already covers
   // that need now, so this went back to matching the real thing instead of
-  // duplicating it. Not ported: Command::Plugin (no plugin engine in this
-  // build, same reason MenuBar's Reload Plugins stays a stub).
+  // duplicating it.
   let { onClose }: { onClose: () => void } = $props();
 
   let input = $state("");
@@ -63,11 +64,18 @@
       .catch(() => {});
   });
 
-  const suggestions = $derived(completions(input, noteTitles, themeIds, tagNames, gitEnabled));
+  let pluginCommands = $state<string[]>([]);
+  $effect(() => {
+    const root = project.value?.root;
+    if (!root) return;
+    invoke<string[]>("plugins_list_commands", { root })
+      .then((r) => (pluginCommands = r))
+      .catch(() => {});
+  });
 
-  function findDocumentByStem(title: string): string | null {
-    return documents.find((d) => d.stem === title)?.path ?? null;
-  }
+  const suggestions = $derived(
+    completions(input, noteTitles, themeIds, tagNames, gitEnabled, pluginCommands),
+  );
 
   async function executeGit(cmd: GitCommand) {
     if (!project.value) return;
@@ -160,11 +168,14 @@
       case "daily":
         openDailyNote();
         break;
+      case "plugin":
+        await runPluginCommand(command.name, command.arg);
+        break;
     }
   }
 
   async function run() {
-    const result = parseCommand(input);
+    const result = parseCommand(input, pluginCommands);
     if (!result.ok) {
       error = result.error;
       return;

@@ -473,6 +473,29 @@ fn ensure_simple_child_name(name: &str) -> io::Result<()> {
     }
 }
 
+/// Resolves `path` to its real, symlink-free location and checks that it sits
+/// inside `root` — the containment check every operation whose path-shaped
+/// argument can come from outside the project (e.g. a Tauri IPC call) must
+/// apply before touching the filesystem. Unlike [`ensure_simple_child_name`]
+/// (which only validates a *new* leaf name being joined onto an
+/// already-known-good parent), this validates an existing `path`/`parent`
+/// argument itself — every caller here passes something that must already
+/// exist (the item being renamed/moved/deleted, or the already-existing
+/// parent folder a new child is created under), so a plain `canonicalize`
+/// (rather than walking up to the nearest existing ancestor) is enough.
+pub fn ensure_path_within_root(root: &Path, path: &Path) -> io::Result<PathBuf> {
+    let root = std::fs::canonicalize(root)?;
+    let resolved = std::fs::canonicalize(path)?;
+    if resolved.starts_with(&root) {
+        Ok(resolved)
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("\"{}\" is outside the project", path.display()),
+        ))
+    }
+}
+
 fn ensure_does_not_exist(store: &dyn ProjectStore, path: &Path) -> io::Result<()> {
     if store.exists(path) {
         Err(io::Error::new(

@@ -458,7 +458,9 @@ pub fn project_binder_tree(root: String) -> Result<BinderNodeDto, String> {
 }
 
 #[tauri::command]
-pub fn document_read(path: String) -> Result<String, String> {
+pub fn document_read(root: String, path: String) -> Result<String, String> {
+    smaragd_core::project::ensure_path_within_root(Path::new(&root), Path::new(&path))
+        .map_err(|e| e.to_string())?;
     smaragd_core::project::store::native_store()
         .read_to_string(Path::new(&path))
         .map_err(|e| e.to_string())
@@ -478,16 +480,43 @@ fn mtime_millis(path: &Path) -> Result<i64, String> {
 }
 
 #[tauri::command]
-pub fn document_mtime(path: String) -> Result<i64, String> {
+pub fn document_mtime(root: String, path: String) -> Result<i64, String> {
+    smaragd_core::project::ensure_path_within_root(Path::new(&root), Path::new(&path))
+        .map_err(|e| e.to_string())?;
     mtime_millis(Path::new(&path))
 }
 
+#[derive(Serialize)]
+pub struct DocumentSaveResult {
+    pub mtime_ms: i64,
+    /// `contents` after every loaded plugin's `on_save` hook ran over it (see
+    /// `smaragd_core::plugins::PluginEngine::run_on_save`) — identical to
+    /// `contents` if no loaded plugin defines `on_save`. This, not `contents`
+    /// itself, is what was actually written to disk, so the frontend should
+    /// replace its buffer with it the same way the real egui app's own
+    /// `save_editor` does.
+    pub text: String,
+}
+
 #[tauri::command]
-pub fn document_save(path: String, contents: String) -> Result<i64, String> {
-    smaragd_core::project::store::native_store()
-        .write(Path::new(&path), contents.as_bytes())
+pub fn document_save(
+    root: String,
+    path: String,
+    contents: String,
+) -> Result<DocumentSaveResult, String> {
+    smaragd_core::project::ensure_path_within_root(Path::new(&root), Path::new(&path))
         .map_err(|e| e.to_string())?;
-    mtime_millis(Path::new(&path))
+    // A broken plugin's `on_save` just leaves the text as that plugin
+    // received it (see `run_on_save`'s own doc comment) — never blocks the
+    // save, same as the real egui app's own `save_editor`.
+    let (text, _plugin_errors) = crate::plugins::load_engine(&root).0.run_on_save(&contents);
+    smaragd_core::project::store::native_store()
+        .write(Path::new(&path), text.as_bytes())
+        .map_err(|e| e.to_string())?;
+    Ok(DocumentSaveResult {
+        mtime_ms: mtime_millis(Path::new(&path))?,
+        text,
+    })
 }
 
 #[tauri::command]
@@ -497,6 +526,17 @@ pub fn render_markdown(markdown: String) -> String {
     // Reading view either (it's metadata for the Metadata panel, not part
     // of the document's prose).
     smaragd_core::markdown::render_html(smaragd_core::frontmatter::strip(&markdown))
+}
+
+/// The `[[target]]` of the wikilink spanning `cursor` (a byte offset into
+/// `text`), if any — backs the Activate Wikilink shortcut. A pure text
+/// function (no project/root needed): resolving `target` to an actual
+/// document is done client-side against the already-loaded binder tree
+/// (`findDocumentByStem` in project.svelte.ts), same as every other
+/// pure-text command here (`render_markdown`).
+#[tauri::command]
+pub fn wikilink_target_at(text: String, cursor: usize) -> Option<String> {
+    smaragd_core::markdown::wikilink_target_at(&text, cursor)
 }
 
 /// A single Search Everywhere text-search hit.

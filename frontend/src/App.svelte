@@ -11,8 +11,9 @@
   import { toast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
   import { focusMode } from "./stores/focusMode.svelte";
-  import { handleGlobalKeydown, installBuiltinShortcutHandlers } from "./shortcuts";
+  import { handleGlobalKeydown, installBuiltinShortcutHandlers, refreshPluginShortcuts } from "./shortcuts";
   import { installDoubleTapShift } from "./doubleTapShift";
+  import { project } from "./stores/project.svelte";
 
   // Menu bar + global keyboard shortcuts are desktop-only — mobile already
   // has its own navigation (MobileShell.svelte, Phase 9) and no keyboard to
@@ -26,6 +27,14 @@
       window.removeEventListener("keydown", handleGlobalKeydown);
       uninstallDoubleTapShift();
     };
+  });
+
+  // Refetches loaded plugins' default shortcuts whenever the open project
+  // changes (including closing one, which clears them) — see
+  // refreshPluginShortcuts's own doc comment.
+  $effect(() => {
+    void project.value?.root;
+    refreshPluginShortcuts();
   });
 </script>
 

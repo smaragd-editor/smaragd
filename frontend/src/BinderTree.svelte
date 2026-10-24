@@ -141,10 +141,24 @@
    * `focusBinder()` (stores/project.svelte.ts) right after the Binder
    * panel becomes visible. Focuses the open document's row if it's
    * currently visible, or the project root's own row (the real app's
-   * "first visible row" fallback) otherwise. */
-  export function focusSelectedOrTop() {
+   * "first visible row" fallback) otherwise. Retries across a few
+   * animation frames rather than one attempt: the caller already waits for
+   * this component to exist (`focusBinder`'s own pending-flag deferral),
+   * but the target row might not be rendered yet (the tree's own data
+   * loads asynchronously after mount — `project_binder_tree` is a Tauri
+   * round trip) or something else mid-dockview-update might steal focus
+   * back a frame later — a one-shot `.focus()` can't recover from either. */
+  export function focusSelectedOrTop(attemptsLeft = 10) {
     const selected = project.selectedPath;
-    focusRowByPath(selected && isRowVisible(selected) ? selected : root);
+    const path = selected && isRowVisible(selected) ? selected : root;
+    const row = treeEl?.querySelector<HTMLElement>(`[data-binder-path="${CSS.escape(path)}"]`);
+    if (row) {
+      row.focus();
+      if (document.activeElement === row || attemptsLeft <= 0) return;
+    } else if (attemptsLeft <= 0) {
+      return;
+    }
+    requestAnimationFrame(() => focusSelectedOrTop(attemptsLeft - 1));
   }
 
   // Every row's path, top-to-bottom in rendered order — never recursing
@@ -756,7 +770,6 @@
   }
 
   .tree {
-    border: 1px solid var(--color-border);
     padding: 0.5rem;
     overflow: auto;
   }

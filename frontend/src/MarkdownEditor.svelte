@@ -13,6 +13,14 @@
   import { markdown } from "@codemirror/lang-markdown";
   import { languages } from "@codemirror/language-data";
   import { search, openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
+  import { effectiveCombo, SHORTCUT_ACTIONS } from "./shortcuts";
+  import type { KeyCombo } from "./stores/settings.svelte";
+  import {
+    project,
+    activateWikilinkAtCursor,
+    toggleBookmarkAtCursor,
+  } from "./stores/project.svelte";
+  import { requestNoteAtCursor } from "./stores/noteRequest.svelte";
 
   // Phase 3 proof-of-concept: CodeMirror 6 in place of the plain <textarea>
   // from Phase 2. This is the highest-risk phase in the migration plan — the
@@ -53,6 +61,78 @@
     provide: (field) => EditorView.decorations.from(field),
   });
 
+  // Converts a KeyCombo's portable, DOM-ish key name (see
+  // core::settings::KeyCombo's own doc comment) to CodeMirror's own keymap
+  // key-string vocabulary — covers the same key set
+  // core::plugins::is_known_key_name does, for the same reason (a shared,
+  // small, named-key vocabulary everything in this app agrees on).
+  function codeMirrorKeyName(key: string): string {
+    const named: Record<string, string> = {
+      enter: "Enter",
+      escape: "Escape",
+      backspace: "Backspace",
+      tab: "Tab",
+      arrowleft: "ArrowLeft",
+      arrowright: "ArrowRight",
+      arrowup: "ArrowUp",
+      arrowdown: "ArrowDown",
+      equal: "=",
+      minus: "-",
+    };
+    if (key in named) return named[key];
+    const fKey = /^f(\d{1,2})$/.exec(key);
+    if (fKey) return `F${fKey[1]}`;
+    return key;
+  }
+
+  function codeMirrorKeyFor(combo: KeyCombo | undefined): string | null {
+    if (!combo || combo.key === "") return null; // unbound
+    const parts: string[] = [];
+    if (combo.ctrl_or_cmd) parts.push("Mod");
+    if (combo.alt) parts.push("Alt");
+    if (combo.shift) parts.push("Shift");
+    parts.push(codeMirrorKeyName(combo.key));
+    return parts.join("-");
+  }
+
+  // The three cursor-anchored actions real Markdown editing needs that
+  // can't go through the global shortcut dispatcher (shortcuts.ts) the way
+  // every other action does — they need CodeMirror's own cursor, which only
+  // this component has, so they're declared `inlineConsumed` there and
+  // consumed here instead, matching the real egui app's own editor_panel.rs
+  // (shortcuts stolen directly inside the Editor pane, not dispatched
+  // through its generic shortcut loop). Computed once at mount, not kept
+  // live against a Settings remap — reopening the document/app picks up a
+  // changed binding, same trade-off `extensions` as a whole already makes
+  // by being built once here rather than through a reconfigurable
+  // Compartment.
+  function inlineShortcutsKeymap() {
+    const bindings: { key: string; run: () => boolean }[] = [];
+    const bind = (actionId: string, run: () => boolean) => {
+      const action = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+      const key = action && codeMirrorKeyFor(effectiveCombo(action));
+      if (key) bindings.push({ key, run });
+    };
+    bind("activate_wikilink", () => {
+      const cursor = getCursor();
+      if (cursor) void activateWikilinkAtCursor(cursor.byteOffset);
+      return true;
+    });
+    bind("toggle_bookmark", () => {
+      const cursor = getCursor();
+      if (cursor) void toggleBookmarkAtCursor(cursor.line);
+      return true;
+    });
+    bind("add_note_at_cursor", () => {
+      const cursor = getCursor();
+      if (cursor && project.selectedPath) {
+        requestNoteAtCursor(project.selectedPath, cursor.line, cursor.byteColumn);
+      }
+      return true;
+    });
+    return keymap.of(bindings);
+  }
+
   onMount(() => {
     const state = EditorState.create({
       doc: value,
@@ -61,6 +141,7 @@
         highlightActiveLine(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
+        inlineShortcutsKeymap(),
         markdown({ codeLanguages: languages }),
         search(),
         misspellingsField,
@@ -74,9 +155,52 @@
     });
 
     view = new EditorView({ state, parent: container });
+
+    // TEMPORARY — diagnosing a report of the editor silently losing focus
+    // to <body> on its own (see shortcuts.ts's own DEBUG_SHORTCUTS log,
+    // which caught `target=BODY` on a keydown with no JS-visible cause).
+    // `console.trace()` only shows a stack when the blur was *synchronously
+    // caused by other JS on this call stack* (e.g. something calling
+    // .focus() elsewhere) — an empty/browser-internal trace here would mean
+    // the blur came from outside our code (window losing OS focus, the
+    // element leaving the DOM, etc.), which is itself a useful data point.
+    // Safe to strip once the cause is known.
+    const onDomFocus = () => console.debug("[editor] dom focus gained");
+    const onDomBlur = (e: FocusEvent) => {
+      const related = e.relatedTarget as HTMLElement | null;
+      console.debug(
+        `[editor] dom blur — relatedTarget=${related ? related.tagName + (related.className ? "." + related.className : "") : "null"}`,
+      );
+      console.trace("[editor] blur call stack (empty/native = caused outside our JS)");
+      requestAnimationFrame(() => {
+        const active = document.activeElement as HTMLElement | null;
+        console.debug(
+          `[editor] one frame after blur, document.activeElement=${active ? active.tagName + (active.className ? "." + active.className : "") : "null"}`,
+        );
+      });
+    };
+    // Rules out "the whole webview window lost OS-level focus" (app
+    // switched away, devtools clicked into, etc.) as a distinct cause from
+    // "focus moved to another element within the page".
+    const onWindowBlur = () => console.debug("[editor] window blur (OS-level)");
+    const onWindowFocus = () => console.debug("[editor] window focus (OS-level)");
+    view.dom.addEventListener("focus", onDomFocus);
+    view.dom.addEventListener("blur", onDomBlur);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    debugCleanup = () => {
+      view?.dom.removeEventListener("focus", onDomFocus);
+      view?.dom.removeEventListener("blur", onDomBlur);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
+    };
   });
 
+  // TEMPORARY — see the debug listeners registered in onMount above.
+  let debugCleanup: (() => void) | undefined;
+
   onDestroy(() => {
+    debugCleanup?.();
     view?.destroy();
   });
 
@@ -122,6 +246,23 @@
     view.dispatch({ effects: setMisspellingsEffect.of(ranges) });
   }
 
+  // Moves keyboard focus into the editor without changing the cursor —
+  // backs the Toggle Editor shortcut's focus-on-show (DockLayout.svelte's
+  // showPanel), the editor counterpart of BinderTree.svelte's
+  // focusSelectedOrTop for the Binder. Retries for a few animation frames
+  // rather than a single attempt: the caller already waits for this
+  // component to exist (see `focusEditor`'s own pending-flag deferral in
+  // stores/project.svelte.ts), but something else in the same dockview
+  // update — another panel's own focus/visibility change still settling —
+  // can still steal focus back a frame or two later, which a one-shot
+  // `view.focus()` can't recover from.
+  export function focus(attemptsLeft = 10) {
+    if (!view) return;
+    view.focus();
+    if (view.hasFocus || attemptsLeft <= 0) return;
+    requestAnimationFrame(() => focus(attemptsLeft - 1));
+  }
+
   // Backs the Next/Previous Bookmark and Note shortcuts — jumps to a line
   // without needing the caller to know anything about CodeMirror positions.
   export function gotoLine(line: number) {
@@ -130,6 +271,26 @@
     const { from } = view.state.doc.line(clamped);
     view.dispatch({ selection: EditorSelection.cursor(from), scrollIntoView: true });
     view.focus();
+  }
+
+  const byteEncoder = new TextEncoder();
+
+  // The cursor's position in the same terms `core::project::{bookmarks,notes}`
+  // store it in — a 1-based logical line and a 0-based *byte* offset (not
+  // UTF-16 code unit) within it, matching `Bookmark::line`/`Note::line`/
+  // `Note::column`'s own doc comments — plus a whole-document byte offset
+  // for `core::markdown::wikilink_target_at`. Backs the three inline
+  // shortcuts above; exported too, in case a caller ever needs the open
+  // cursor position without going through them.
+  export function getCursor():
+    | { line: number; byteColumn: number; byteOffset: number }
+    | undefined {
+    if (!view) return undefined;
+    const head = view.state.selection.main.head;
+    const lineInfo = view.state.doc.lineAt(head);
+    const byteColumn = byteEncoder.encode(lineInfo.text.slice(0, head - lineInfo.from)).length;
+    const byteOffset = byteEncoder.encode(view.state.doc.sliceString(0, head)).length;
+    return { line: lineInfo.number, byteColumn, byteOffset };
   }
 </script>
 

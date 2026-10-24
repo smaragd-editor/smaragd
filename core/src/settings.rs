@@ -5,10 +5,12 @@
 //! can coexist on one machine during the migration without either's save
 //! ever risking corrupting or silently dropping fields from the other's
 //! settings file. Fields this struct doesn't (yet) have a real consumer for
-//! in the Tauri app (sync server config — Phase 6's Sync panel is demo-only;
-//! plugin shortcut overrides — no plugin engine exists here) are left out
-//! rather than carried along inert; everything that *is* here either already
-//! has a real effect or is wired alongside this module.
+//! in the Tauri app (sync server config — Phase 6's Sync panel is demo-only)
+//! are left out rather than carried along inert; everything that *is* here
+//! either already has a real effect or is wired alongside this module.
+//! Plugin shortcut overrides are the one exception worth calling out: they
+//! reuse `shortcuts` below rather than needing a field of their own — see
+//! that field's doc comment.
 //!
 //! `egui`-coupled fields from the original (`theme_preference:
 //! egui::ThemePreference`, `editor_font`/`ui_font: EditorFont` holding an
@@ -32,7 +34,7 @@ use crate::project::store::ProjectStore;
 /// platform-abstracted `Modifiers::COMMAND` (Ctrl on Windows/Linux, Cmd on
 /// macOS) into one field — which physical key that means is resolved at
 /// match time in the frontend, not stored here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KeyCombo {
     pub key: String,
     pub ctrl_or_cmd: bool,
@@ -88,6 +90,29 @@ impl KeyCombo {
             ..Self::new(key)
         }
     }
+}
+
+/// True for a [`KeyCombo::key`] that never corresponds to a typed character
+/// (a function key or `Escape`) — safe to bind without requiring a
+/// modifier, since doing so can't make any character impossible to type.
+/// Portable counterpart of the real egui app's own
+/// `shortcuts::is_modifier_free_safe_key`.
+fn is_modifier_free_safe_key(key: &str) -> bool {
+    key == "escape"
+        || key
+            .strip_prefix('f')
+            .and_then(|rest| rest.parse::<u8>().ok())
+            .is_some_and(|n| (1..=35).contains(&n))
+}
+
+/// Whether `combo` is safe to bind: it must either require at least one
+/// modifier, or use a key from [`is_modifier_free_safe_key`] — otherwise
+/// binding it would make some character impossible to type anywhere in the
+/// app. Used by `plugins::load` to validate a script's `register_shortcut`
+/// call — portable counterpart of the real egui app's own
+/// `shortcuts::is_safe_binding`.
+pub fn is_safe_binding(combo: &KeyCombo) -> bool {
+    combo.ctrl_or_cmd || combo.shift || combo.alt || is_modifier_free_safe_key(&combo.key)
 }
 
 /// Portable replacement for `egui::ThemePreference` (same three variants —
@@ -175,7 +200,13 @@ pub struct Settings {
     /// Keyed by the same stable snake_case action ids the real app's
     /// `ShortcutAction::id()` uses (see frontend/src/shortcuts.ts, the
     /// single source of truth for the action catalog on this side of the
-    /// port) — an id absent from this map is unbound.
+    /// port) — an id absent from this map is unbound. Also doubles as the
+    /// override map for a loaded plugin's `register_shortcut` default, keyed
+    /// by that plugin command's own name instead of a built-in action id —
+    /// the two id spaces don't collide (plugin command names are validated
+    /// against the project's own namespace, not this catalog), so one map
+    /// covers both rather than needing a second `plugin_shortcut_overrides`
+    /// field the way the egui app's `Settings` has.
     pub shortcuts: BTreeMap<String, KeyCombo>,
 
     pub theme_preference: ThemePreference,

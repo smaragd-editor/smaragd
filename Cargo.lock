@@ -7988,6 +7988,7 @@ dependencies = [
  "pulldown-cmark",
  "quick-xml 0.42.0",
  "rand 0.10.3",
+ "rhai",
  "serde",
  "serde_json",
  "serde_norway",

@@ -1,12 +1,12 @@
 //! The Project Settings dialog (app/src/ui/project_settings_panel.rs in the
-//! real egui app) — a bounded subset of its 5 categories: Binder (handled by
+//! real egui app) — all 5 of its categories: Git, Sync, Binder (handled by
 //! project.rs's `set_binder_color_mode`, already shared with the View menu),
-//! Daily Notes, Folder Roles, and Status/POV colors. Left out of this pass:
-//! Git auto-commit config, the Sync "also sync non-text files" toggle, and
-//! Attachments destination — each its own small chunk of core methods with
-//! no existing command either, same shape as what's here, just not wired
-//! yet. None of the core methods below needed any change to be callable
-//! from a command; they were already `pub`.
+//! Attachments, and Daily Notes, plus Folder Roles and Status/POV colors
+//! (not categories of their own in the real app, but shown in this same
+//! dialog). None of the core methods below needed any change to be callable
+//! from a command; they were already `pub`. Left out of the Attachments
+//! category, deliberately: the clipboard image paste size limit — a
+//! separate, unrelated toggle this pass didn't need to touch.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -14,7 +14,7 @@ use std::path::Path;
 use serde::Serialize;
 use smaragd_core::project::Project;
 use smaragd_core::project::model::{BinderNode, BinderNodeKind};
-use smaragd_core::project::{BinderColorMode, FolderRole, PicklistField};
+use smaragd_core::project::{AttachmentDestination, BinderColorMode, FolderRole, PicklistField};
 
 use crate::panels::DocumentMetaInput;
 
@@ -49,9 +49,18 @@ pub struct ProjectSettingsDto {
     daily_notes_enabled: bool,
     daily_notes_folder: String,
     daily_note_filename_format: String,
+    daily_note_template: Option<String>,
     folder_roles: Vec<FolderRoleEntry>,
     status_colors: BTreeMap<String, String>,
     pov_colors: BTreeMap<String, String>,
+    plugins_enabled: bool,
+    git_enabled: bool,
+    git_auto_commit_enabled: bool,
+    git_auto_commit_interval_minutes: u32,
+    git_auto_commit_push_enabled: bool,
+    sync_files: bool,
+    attachment_destination: AttachmentDestination,
+    attachments_folder: Option<String>,
 }
 
 /// Everything the Project Settings dialog shows, in one round trip rather
@@ -67,10 +76,37 @@ pub fn project_settings(root: String) -> Result<ProjectSettingsDto, String> {
         daily_notes_enabled: project.daily_notes_enabled(),
         daily_notes_folder: project.daily_notes_folder_key().to_string(),
         daily_note_filename_format: project.daily_note_filename_format().to_string(),
+        daily_note_template: project
+            .daily_note_template()
+            .map(|path| path.display().to_string()),
         folder_roles,
         status_colors: project.meta.status_colors.clone(),
         pov_colors: project.meta.pov_colors.clone(),
+        plugins_enabled: project.meta.plugins_enabled,
+        git_enabled: project.meta.git_enabled,
+        git_auto_commit_enabled: project.meta.git_auto_commit_enabled,
+        git_auto_commit_interval_minutes: project.meta.resolve_git_auto_commit_interval_minutes(),
+        git_auto_commit_push_enabled: project.meta.git_auto_commit_push_enabled,
+        sync_files: project.meta.sync_files,
+        attachment_destination: project.attachment_destination(),
+        attachments_folder: project
+            .attachments_folder()
+            .map(|path| path.display().to_string()),
     })
+}
+
+/// Opts this project's `.smaragd/plugins` directory in or out of the plugin
+/// engine — see `smaragd_core::plugins`'s module doc for what a project-local
+/// plugin can do and `project::Project::set_plugins_enabled` for the
+/// underlying persisted flag. The frontend re-calls `plugins_reload` after
+/// this to pick up the change immediately rather than waiting for the next
+/// project open.
+#[tauri::command]
+pub fn set_project_plugins_enabled(root: String, enabled: bool) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_plugins_enabled(enabled)
+        .map_err(|e| e.to_string())
 }
 
 #[derive(Serialize)]
@@ -165,6 +201,64 @@ pub fn set_project_daily_notes(
         .set_daily_note_filename_format(filename_format)
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// `path: None` clears the daily note template (blank note). Errors if
+/// `path` isn't a document inside the project — see
+/// `Project::set_daily_note_template`'s own validation.
+#[tauri::command]
+pub fn set_daily_note_template(root: String, path: Option<String>) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_daily_note_template(path.as_deref().map(Path::new))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_git_auto_commit(
+    root: String,
+    enabled: bool,
+    interval_minutes: u32,
+    push_enabled: bool,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_git_auto_commit_enabled(enabled)
+        .map_err(|e| e.to_string())?;
+    project
+        .set_git_auto_commit_interval_minutes(interval_minutes)
+        .map_err(|e| e.to_string())?;
+    project
+        .set_git_auto_commit_push_enabled(push_enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_sync_files(root: String, enabled: bool) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project.set_sync_files(enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_attachment_destination(
+    root: String,
+    destination: AttachmentDestination,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_attachment_destination(destination)
+        .map_err(|e| e.to_string())
+}
+
+/// `path: None` clears the configured attachments folder. Errors if `path`
+/// isn't a directory inside the project — see
+/// `Project::set_attachments_folder`'s own validation.
+#[tauri::command]
+pub fn set_attachments_folder(root: String, path: Option<String>) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .set_attachments_folder(path.as_deref().map(Path::new))
+        .map_err(|e| e.to_string())
 }
 
 /// `role: None` clears whatever role `path` currently has.

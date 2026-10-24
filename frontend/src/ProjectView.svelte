@@ -1,6 +1,5 @@
 <script lang="ts">
   import { open } from "@tauri-apps/plugin-dialog";
-  import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import DockLayout from "./DockLayout.svelte";
   import MobileShell from "./MobileShell.svelte";
   import EmptyStateArt from "./EmptyStateArt.svelte";
@@ -14,23 +13,16 @@
   //
   // Phase 7: the folder picker below is the rfd -> @tauri-apps/plugin-dialog
   // swap from the plan's §4 list (rfd's own call sites included exactly
-  // this kind of project-folder picker). "Reveal in file manager" is the
-  // opener -> @tauri-apps/plugin-opener swap (the plan's own note that
-  // this action has no mobile equivalent — fine here, this is the desktop
-  // shell). The raw text-input fallback this screen used until a real
-  // picker existed is gone — once Browse… actually opened a native
-  // dialog, typing a path by hand had nothing left to justify it (same
-  // reasoning that made File > Open Project's own text-input placeholder
-  // redundant once it got the same Browse… flow).
+  // this kind of project-folder picker). The raw text-input fallback this
+  // screen used until a real picker existed is gone — once Browse… actually
+  // opened a native dialog, typing a path by hand had nothing left to
+  // justify it (same reasoning that made File > Open Project's own
+  // text-input placeholder redundant once it got the same Browse… flow).
   let dockLayout = $state<DockLayout>();
 
   async function pickFolder() {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected === "string") await openProject(selected);
-  }
-
-  function revealProjectFolder() {
-    if (project.value) revealItemInDir(project.value.root);
   }
 </script>
 
@@ -58,8 +50,6 @@
   {:else}
     <div class="toolbar">
       <strong>{project.value.book_title ?? project.value.root}</strong>
-      <button onclick={revealProjectFolder}>Reveal in file manager</button>
-      <button onclick={closeProject}>Close</button>
     </div>
     <div class="dock-host">
       <DockLayout bind:this={dockLayout} />
@@ -86,7 +76,10 @@
     overflow: auto;
     padding: 1rem;
     box-sizing: border-box;
-    background: white;
+    /* Sampled from empty-state-background.png's own edge pixels — it's a
+       warm off-white, not pure white, so plain `white` showed a visible
+       seam around the illustration. */
+    background: #f9f9f4;
   }
 
   .toolbar {

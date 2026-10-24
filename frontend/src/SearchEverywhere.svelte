@@ -151,7 +151,15 @@
     "Pomodoro",
     "Shortcuts",
   ];
-  const PROJECT_SETTINGS_CATEGORIES = ["Binder", "DailyNotes", "FolderRoles", "Colors"];
+  const PROJECT_SETTINGS_CATEGORIES = [
+    "Git",
+    "Sync",
+    "Binder",
+    "Attachments",
+    "DailyNotes",
+    "FolderRoles",
+    "Colors",
+  ];
 
   type SettingTarget = { label: string; context: string; open: () => void };
 

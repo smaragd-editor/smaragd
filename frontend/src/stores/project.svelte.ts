@@ -102,8 +102,21 @@ let editorRef:
       openFindReplace: (prefill?: string) => void;
       gotoLine: (line: number) => void;
       setMisspellings: (ranges: { from: number; to: number }[]) => void;
+      focus: () => void;
     }
   | undefined;
+
+// Set by focusEditor/focusBinder when they're asked to focus a panel that
+// isn't mounted yet (e.g. `api.addPanel`/`api.clear()+addPanel` just asked
+// dockview to create it, but its Svelte component's own `onMount` — which
+// is what actually calls `registerEditor`/`registerBinder` — hasn't run
+// yet: dockview's own `init()` callback, and Svelte's own effect/mount
+// scheduling, aren't guaranteed to have completed by the time the
+// synchronous call that triggered the panel creation returns). Consumed by
+// registerEditor/registerBinder once the ref actually becomes available,
+// rather than guessing a fixed delay.
+let pendingEditorFocus = false;
+let pendingBinderFocus = false;
 
 /** Called by EditorPanel.svelte on mount/unmount. A panel reopened from the
  * Window menu (or moved to a new group, which remounts its content) needs
@@ -114,6 +127,10 @@ export function registerEditor(ref: typeof editorRef) {
   if (editorRef && project.selectedPath) {
     editorRef.setDocument(project.documentText);
     scheduleSpellCheck();
+  }
+  if (editorRef && pendingEditorFocus) {
+    pendingEditorFocus = false;
+    focusEditor();
   }
 }
 
@@ -127,6 +144,10 @@ let binderRef: { focusSelectedOrTop: () => void } | undefined;
  * `registerEditor`. */
 export function registerBinder(ref: typeof binderRef) {
   binderRef = ref;
+  if (binderRef && pendingBinderFocus) {
+    pendingBinderFocus = false;
+    focusBinder();
+  }
 }
 
 /** Ports `binder_panel.rs`'s `focus_requested` handling: focuses the
@@ -135,10 +156,33 @@ export function registerBinder(ref: typeof binderRef) {
  * DockLayout.svelte right after the Binder panel transitions from
  * not-visible to visible (toggled on, or brought to front), matching the
  * real app's own tab-to-front-plus-focus-request combo
- * (`ToggleBinderFocus`/"Reveal in Binder"). A no-op if the Binder isn't
- * actually mounted (e.g. called before DockLayout exists yet). */
+ * (`ToggleBinderFocus`/"Reveal in Binder"). If the Binder isn't mounted yet
+ * (a fresh `addPanel`, not an already-open one just being brought to
+ * front), defers via `pendingBinderFocus` above instead of silently doing
+ * nothing — `BinderTree.svelte`'s own `focusSelectedOrTop` then retries
+ * across a few animation frames on its own (its target row may not have
+ * rendered yet, or something else mid-dockview-update may steal focus back
+ * a frame later), so this only needs to get the call there once. */
 export function focusBinder() {
-  binderRef?.focusSelectedOrTop();
+  if (!binderRef) {
+    pendingBinderFocus = true;
+    return;
+  }
+  binderRef.focusSelectedOrTop();
+}
+
+/** Moves keyboard focus into the open document's editor — called by
+ * DockLayout.svelte right after the Editor panel transitions from
+ * not-visible to visible (toggled on, or brought to front), the editor
+ * counterpart of `focusBinder` (see its doc comment — `MarkdownEditor.svelte`'s
+ * own `focus` export retries the same way `focusSelectedOrTop` does). A
+ * no-op only if no Editor panel is ever mounted at all. */
+export function focusEditor() {
+  if (!editorRef) {
+    pendingEditorFocus = true;
+    return;
+  }
+  editorRef.focus();
 }
 
 // Mirrors core::settings::Settings::record_recent_project exactly (most-
@@ -260,10 +304,17 @@ async function checkExternalChanges() {
  * conflict alone rather than re-detecting it every scan. Ports
  * `check_open_document_for_external_change` 1:1. */
 async function checkOpenDocumentForExternalChange() {
-  if (!project.selectedPath || lastKnownMtimeMs === null || externalConflict.path !== null) return;
+  if (
+    !project.selectedPath ||
+    !project.value ||
+    lastKnownMtimeMs === null ||
+    externalConflict.path !== null
+  )
+    return;
+  const root = project.value.root;
   let mtime: number;
   try {
-    mtime = await invoke<number>("document_mtime", { path: project.selectedPath });
+    mtime = await invoke<number>("document_mtime", { root, path: project.selectedPath });
   } catch {
     return;
   }
@@ -274,7 +325,7 @@ async function checkOpenDocumentForExternalChange() {
   }
   const path = project.selectedPath;
   try {
-    const text = await invoke<string>("document_read", { path });
+    const text = await invoke<string>("document_read", { root, path });
     project.documentText = text;
     editorRef?.setDocument(text);
     lastKnownMtimeMs = mtime;
@@ -295,17 +346,18 @@ async function checkOpenDocumentForExternalChange() {
 export async function resolveExternalConflict(discardLocal: boolean) {
   const path = externalConflict.path;
   externalConflict.path = null;
-  if (!path) return;
+  if (!path || !project.value) return;
+  const root = project.value.root;
   if (discardLocal) {
     clearTimeout(saveTimer);
     saveTimer = undefined;
     try {
-      const text = await invoke<string>("document_read", { path });
+      const text = await invoke<string>("document_read", { root, path });
       project.documentText = text;
       editorRef?.setDocument(text);
       project.dirty = false;
       project.saveStatus = "saved";
-      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { root, path });
       schedulePreview();
       scheduleSpellCheck();
       showToast("Reloaded from disk");
@@ -314,7 +366,7 @@ export async function resolveExternalConflict(discardLocal: boolean) {
     }
   } else {
     try {
-      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { root, path });
     } catch {
       // Leaves lastKnownMtimeMs as-is — worst case this re-raises the same
       // conflict next scan, which is safe, just an extra prompt.
@@ -329,8 +381,13 @@ export async function openDocument(path: string) {
   project.dirty = false;
   externalConflict.path = null;
   lastKnownMtimeMs = null;
+  if (!project.value) {
+    project.documentError = "No project open";
+    return;
+  }
+  const root = project.value.root;
   try {
-    const text = await invoke<string>("document_read", { path });
+    const text = await invoke<string>("document_read", { root, path });
     project.documentText = text;
     project.selectedPath = path;
     resetMetadataSelectionToDocument();
@@ -340,7 +397,7 @@ export async function openDocument(path: string) {
     pushRecentFile(path);
     pushHistory(path);
     try {
-      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { root, path });
     } catch {
       // No mtime to compare against yet — external-change detection for
       // this document just stays inert until the next open/save.
@@ -437,6 +494,47 @@ export function applyDocumentMetaEdit(newContents: string) {
   scheduleSpellCheck();
 }
 
+/** Runs a plugin-registered `:` command (`name`) with argument `arg`,
+ * giving it the open document's live buffer/basename/filename exactly as
+ * held here (this port autosaves on a debounce rather than holding open
+ * tabs' text server-side — see `app-tauri/src/project.rs`'s own note on
+ * this — so there's nothing to re-read from disk), and applying whatever
+ * effects it produced back onto real app state. Never saves — like any
+ * other edit, the autosave debounce (`applyDocumentMetaEdit`) does that.
+ * Shared by CommandPrompt.svelte's `:pluginname` dispatch and
+ * shortcuts.ts's plugin-shortcut dispatch, mirroring the real egui app's
+ * own single `run_plugin_command`. */
+export async function runPluginCommand(name: string, arg: string) {
+  if (!project.value) return;
+  const path = project.selectedPath;
+  const documentText = path ? project.documentText : null;
+  const documentBasename = path?.split("/").pop()?.replace(/\.md$/, "") ?? null;
+  const root = project.value.root;
+  const documentFilename =
+    path && path.startsWith(root) ? path.slice(root.length).replace(/^\/+/, "") : path;
+  const result = await invoke<{
+    status_message: string | null;
+    set_document_text: string | null;
+    error: string | null;
+  }>("plugins_run_command", {
+    root,
+    name,
+    arg,
+    documentText,
+    documentBasename,
+    documentFilename,
+  });
+  if (result.error) {
+    showToast(result.error);
+    return;
+  }
+  // Only meaningful with a document open — a plugin can't fabricate one.
+  if (path && result.set_document_text !== null) {
+    applyDocumentMetaEdit(result.set_document_text);
+  }
+  if (result.status_message) showToast(result.status_message);
+}
+
 function schedulePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(async () => {
@@ -507,13 +605,22 @@ export function recheckSpelling() {
 }
 
 export async function saveDocument() {
-  if (!project.selectedPath) return;
+  if (!project.selectedPath || !project.value) return;
   project.saveStatus = "saving";
   try {
-    lastKnownMtimeMs = await invoke<number>("document_save", {
+    const result = await invoke<{ mtime_ms: number; text: string }>("document_save", {
+      root: project.value.root,
       path: project.selectedPath,
       contents: project.documentText,
     });
+    lastKnownMtimeMs = result.mtime_ms;
+    // A loaded plugin's `on_save` hook may have transformed what was
+    // actually written to disk — reflect that back into the buffer/live
+    // view, same as the real app's own `save_editor`.
+    if (result.text !== project.documentText) {
+      project.documentText = result.text;
+      editorRef?.setDocument(result.text);
+    }
     project.saveStatus = "saved";
     project.dirty = false;
   } catch (err) {
@@ -599,6 +706,65 @@ export async function createDocumentAtSelection(name: string) {
     openDocument(result.path);
   } catch (err) {
     showToast(`Couldn't create document: ${err}`);
+  }
+}
+
+function collectDocumentStems(node: BinderNodeDto, out: { stem: string; path: string }[]) {
+  if (node.kind === "Document") {
+    out.push({ stem: node.name.replace(/\.md$/, ""), path: node.path });
+  } else {
+    for (const child of node.children) collectDocumentStems(child, out);
+  }
+}
+
+/** The path of the document whose filename (minus `.md`) matches `stem`,
+ * case-insensitively — the Tauri-port equivalent of the real app's
+ * `BinderTree::find_document_by_stem`, which resolves an activated
+ * `[[wikilink]]` to a file. Walks the already-loaded binder tree client-side
+ * rather than a round trip, since the frontend already holds it. */
+export function findDocumentByStem(stem: string): string | null {
+  if (!project.value) return null;
+  const out: { stem: string; path: string }[] = [];
+  collectDocumentStems(project.value.tree, out);
+  const lower = stem.toLowerCase();
+  return out.find((d) => d.stem.toLowerCase() === lower)?.path ?? null;
+}
+
+/** Backs the Activate Wikilink shortcut (Cmd/Ctrl+Enter by default, consumed
+ * inside MarkdownEditor.svelte's own CodeMirror keymap — see that file):
+ * resolves the `[[target]]` spanning `cursorByteOffset` in the open
+ * document to another document and opens it, or — matching the real app's
+ * own `force_create` behavior, unconditional for the keyboard shortcut —
+ * creates one as a sibling of the currently open document if no match
+ * exists. */
+export async function activateWikilinkAtCursor(cursorByteOffset: number) {
+  if (!project.value || !project.selectedPath) return;
+  const target = await invoke<string | null>("wikilink_target_at", {
+    text: project.documentText,
+    cursor: cursorByteOffset,
+  });
+  if (!target) return;
+  const path = findDocumentByStem(target);
+  if (path) {
+    openDocument(path);
+  } else {
+    await createDocumentAtSelection(target);
+  }
+}
+
+/** Backs the Toggle Bookmark shortcut: adds a bookmark on the open
+ * document's cursor line if none exists there yet, removes it otherwise. */
+export async function toggleBookmarkAtCursor(line: number) {
+  if (!project.value || !project.selectedPath) return;
+  try {
+    const bookmarked = await invoke<boolean>("bookmark_toggle", {
+      root: project.value.root,
+      path: project.selectedPath,
+      line,
+    });
+    showToast(bookmarked ? "Bookmarked" : "Bookmark removed");
+  } catch (err) {
+    showToast(String(err));
   }
 }
 

@@ -142,7 +142,18 @@ pub fn render_html(markdown: &str) -> String {
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
 
-    let parser = Parser::new_ext(markdown, options);
+    // CommonMark's raw-HTML passthrough (`Event::Html`/`Event::InlineHtml`) is
+    // written to the output verbatim by `html::push_html` — unlike `Text`,
+    // which it HTML-escapes. Since this HTML feeds the frontend's
+    // `{@html}`-rendered Preview pane, an untrusted document (imported,
+    // synced, or from a collab peer) containing e.g. `<script>` or an
+    // `onerror=`-bearing tag would otherwise execute as live script there.
+    // Treating raw HTML as literal text closes that off; nothing here needs
+    // to actually render embedded HTML.
+    let parser = Parser::new_ext(markdown, options).map(|event| match event {
+        Event::Html(text) | Event::InlineHtml(text) => Event::Text(text),
+        other => other,
+    });
     let mut out = String::new();
     html::push_html(&mut out, parser);
     out

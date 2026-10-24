@@ -2,6 +2,7 @@ mod collab;
 mod git_ops;
 mod manuscript;
 mod panels;
+mod plugins;
 mod pomodoro;
 mod project;
 mod project_settings;
@@ -41,6 +42,7 @@ pub fn run() {
             project::document_mtime,
             project::document_save,
             project::render_markdown,
+            project::wikilink_target_at,
             project::binder_create_document,
             project::template_documents,
             project::binder_create_document_from_template,
@@ -67,6 +69,11 @@ pub fn run() {
             project::set_project_synopsis,
             project_settings::project_settings,
             project_settings::set_project_daily_notes,
+            project_settings::set_daily_note_template,
+            project_settings::set_git_auto_commit,
+            project_settings::set_sync_files,
+            project_settings::set_attachment_destination,
+            project_settings::set_attachments_folder,
             project_settings::set_folder_role,
             project_settings::folder_role,
             project_settings::is_trashed,
@@ -79,6 +86,11 @@ pub fn run() {
             project_settings::picklist_options,
             project_settings::folder_metadata,
             project_settings::set_folder_metadata,
+            project_settings::set_project_plugins_enabled,
+            plugins::plugins_reload,
+            plugins::plugins_list_commands,
+            plugins::plugins_shortcut_defaults,
+            plugins::plugins_run_command,
             story_cards::story_cards_list,
             story_cards::story_card_upsert,
             story_cards::story_card_delete,
@@ -100,8 +112,11 @@ pub fn run() {
             panels::streak_status,
             panels::bookmarks_list,
             panels::bookmark_delete,
+            panels::bookmark_toggle,
             panels::notes_list,
             panels::note_delete,
+            panels::note_text_at,
+            panels::note_upsert,
             panels::dashboard_summary,
             panels::version_activity,
             settings::settings_load,
