@@ -37,6 +37,7 @@ pub fn run() {
             project::project_close,
             project::project_binder_tree,
             project::document_read,
+            project::document_mtime,
             project::document_save,
             project::render_markdown,
             project::binder_create_document,

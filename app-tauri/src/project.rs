@@ -445,11 +445,30 @@ pub fn document_read(path: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// The file's modification time, in milliseconds since the Unix epoch —
+/// what `document_save`'s own return value and `external_watch`'s polling
+/// compare against to notice a write that didn't come from this app.
+fn mtime_millis(path: &Path) -> Result<i64, String> {
+    let modified = std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .map_err(|e| e.to_string())?;
+    modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
-pub fn document_save(path: String, contents: String) -> Result<(), String> {
+pub fn document_mtime(path: String) -> Result<i64, String> {
+    mtime_millis(Path::new(&path))
+}
+
+#[tauri::command]
+pub fn document_save(path: String, contents: String) -> Result<i64, String> {
     smaragd_core::project::store::native_store()
         .write(Path::new(&path), contents.as_bytes())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    mtime_millis(Path::new(&path))
 }
 
 #[tauri::command]

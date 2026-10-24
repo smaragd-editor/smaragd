@@ -56,6 +56,13 @@ export const project = $state<{
   documentError: string | null;
   saveStatus: "idle" | "saving" | "saved" | "error";
   previewHtml: string;
+  /** True from the first edit after an open/save/external-reload until the
+   * next successful save — the Tauri-port equivalent of the real app's
+   * `EditorState::dirty`, kept only so `checkOpenDocumentForExternalChange`
+   * can tell "safe to silently reload" apart from "would clobber an
+   * unsaved edit" the same way `check_open_document_for_external_change`
+   * does, despite this port having no held multi-tab editor state. */
+  dirty: boolean;
 }>({
   value: null,
   openError: null,
@@ -64,10 +71,19 @@ export const project = $state<{
   documentError: null,
   saveStatus: "idle",
   previewHtml: "",
+  dirty: false,
 });
+
+/** Set when the open document changed on disk while `project.dirty` was
+ * true — `app::external_watch`'s `external_conflict`, ported 1:1 as a
+ * promise-free reactive flag instead, since ExternalConflictPrompt.svelte
+ * just reads it directly rather than awaiting a resolution. */
+export const externalConflict = $state<{ path: string | null }>({ path: null });
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
+let lastKnownMtimeMs: number | null = null;
+let externalWatchTimer: ReturnType<typeof setInterval> | undefined;
 let editorRef:
   | {
       setDocument: (text: string) => void;
@@ -132,6 +148,7 @@ export async function openProject(root: string) {
     project.value = await invoke<ProjectSummary>("project_open", { root });
     recordRecentProject(root);
     await runBackup(root, "open");
+    startExternalWatch();
   } catch (err) {
     project.openError = String(err);
   }
@@ -150,6 +167,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
     });
     recordRecentProject(root);
     await runBackup(root, "open");
+    startExternalWatch();
   } catch (err) {
     project.openError = String(err);
   }
@@ -157,6 +175,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
 
 export async function closeProject() {
   const root = project.value?.root;
+  stopExternalWatch();
   await invoke("project_close");
   if (root) await runBackup(root, "close");
   project.value = null;
@@ -165,10 +184,116 @@ export async function closeProject() {
   project.previewHtml = "";
 }
 
+// External-change detection (app::external_watch): another program, a sync
+// tool, or a manual `git pull` outside this app's own Versions menu can
+// change files on disk while the project is open. Polled rather than
+// filesystem-event-driven, same interval as the real app's own
+// EXTERNAL_SCAN_INTERVAL — short enough that a change shows up promptly,
+// long enough to be a non-event for CPU. A no-op (not an error) if the
+// scan or mtime check itself fails (e.g. the file briefly doesn't exist
+// mid-write) — just tries again next tick, same tolerance the real app's
+// own 2-second poll has.
+const EXTERNAL_SCAN_INTERVAL_MS = 2000;
+
+function startExternalWatch() {
+  stopExternalWatch();
+  externalWatchTimer = setInterval(checkExternalChanges, EXTERNAL_SCAN_INTERVAL_MS);
+}
+
+function stopExternalWatch() {
+  clearInterval(externalWatchTimer);
+  externalWatchTimer = undefined;
+}
+
+async function checkExternalChanges() {
+  if (!project.value) return;
+  try {
+    const tree = await invoke<BinderNodeDto>("project_binder_tree", { root: project.value.root });
+    onTreeChange(tree);
+  } catch {
+    // A transient scan failure shouldn't surface as an error toast —
+    // just try again next tick.
+  }
+  await checkOpenDocumentForExternalChange();
+}
+
+/** If the open document's on-disk content moved since it was last read or
+ * written here: reload it immediately when there's nothing unsaved to
+ * lose, or — if `project.dirty` — leave the buffer alone and record the
+ * conflict for ExternalConflictPrompt.svelte to ask the user about instead
+ * of silently clobbering either version. Leaves an already-recorded
+ * conflict alone rather than re-detecting it every scan. Ports
+ * `check_open_document_for_external_change` 1:1. */
+async function checkOpenDocumentForExternalChange() {
+  if (!project.selectedPath || lastKnownMtimeMs === null || externalConflict.path !== null) return;
+  let mtime: number;
+  try {
+    mtime = await invoke<number>("document_mtime", { path: project.selectedPath });
+  } catch {
+    return;
+  }
+  if (mtime <= lastKnownMtimeMs) return;
+  if (project.dirty) {
+    externalConflict.path = project.selectedPath;
+    return;
+  }
+  const path = project.selectedPath;
+  try {
+    const text = await invoke<string>("document_read", { path });
+    project.documentText = text;
+    editorRef?.setDocument(text);
+    lastKnownMtimeMs = mtime;
+    schedulePreview();
+    scheduleSpellCheck();
+    const name = path.split("/").pop()?.replace(/\.md$/, "") ?? "Document";
+    showToast(`Reloaded "${name}" — changed on disk`);
+  } catch (err) {
+    showToast(`Couldn't reload ${path}: ${err}`);
+  }
+}
+
+/** Resolve `externalConflict` per the user's choice in
+ * ExternalConflictPrompt.svelte: `discardLocal` reloads the on-disk
+ * version (losing the unsaved edits), otherwise the local buffer is kept
+ * and the on-disk change is just acknowledged so the same write isn't
+ * flagged again. Ports `resolve_external_conflict` 1:1. */
+export async function resolveExternalConflict(discardLocal: boolean) {
+  const path = externalConflict.path;
+  externalConflict.path = null;
+  if (!path) return;
+  if (discardLocal) {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    try {
+      const text = await invoke<string>("document_read", { path });
+      project.documentText = text;
+      editorRef?.setDocument(text);
+      project.dirty = false;
+      project.saveStatus = "saved";
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+      schedulePreview();
+      scheduleSpellCheck();
+      showToast("Reloaded from disk");
+    } catch (err) {
+      showToast(`Couldn't reload: ${err}`);
+    }
+  } else {
+    try {
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+    } catch {
+      // Leaves lastKnownMtimeMs as-is — worst case this re-raises the same
+      // conflict next scan, which is safe, just an extra prompt.
+    }
+  }
+}
+
 export async function openDocument(path: string) {
   flushPendingSave();
   project.documentError = null;
   project.saveStatus = "idle";
+  project.dirty = false;
+  externalConflict.path = null;
+  lastKnownMtimeMs = null;
   try {
     const text = await invoke<string>("document_read", { path });
     project.documentText = text;
@@ -179,6 +304,12 @@ export async function openDocument(path: string) {
     scheduleSpellCheck();
     pushRecentFile(path);
     pushHistory(path);
+    try {
+      lastKnownMtimeMs = await invoke<number>("document_mtime", { path });
+    } catch {
+      // No mtime to compare against yet — external-change detection for
+      // this document just stays inert until the next open/save.
+    }
   } catch (err) {
     project.documentError = String(err);
   }
@@ -242,6 +373,7 @@ export async function goForwardDocument() {
 export function onEditorChange(text: string) {
   project.documentText = text;
   project.saveStatus = "idle";
+  project.dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDocument, 800);
   schedulePreview();
@@ -263,6 +395,7 @@ export function applyDocumentMetaEdit(newContents: string) {
   project.documentText = newContents;
   editorRef?.setDocument(newContents);
   project.saveStatus = "idle";
+  project.dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDocument, 800);
   schedulePreview();
@@ -342,11 +475,12 @@ export async function saveDocument() {
   if (!project.selectedPath) return;
   project.saveStatus = "saving";
   try {
-    await invoke("document_save", {
+    lastKnownMtimeMs = await invoke<number>("document_save", {
       path: project.selectedPath,
       contents: project.documentText,
     });
     project.saveStatus = "saved";
+    project.dirty = false;
   } catch (err) {
     project.documentError = String(err);
     project.saveStatus = "error";
@@ -397,6 +531,9 @@ export function closeDocument() {
   project.selectedPath = null;
   project.documentText = "";
   project.previewHtml = "";
+  project.dirty = false;
+  externalConflict.path = null;
+  lastKnownMtimeMs = null;
   editorRef?.setMisspellings([]);
 }
 
