@@ -282,13 +282,18 @@
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       selected = Math.max(selected - 1, 0);
-    } else if (e.key === "Tab" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      // Left/Right switch tabs unconditionally here, same as Tab/Shift+Tab
-      // — this is a single-line quick-filter field, not something meant to
-      // be edited by repositioning the caret, so there's no ordinary
-      // cursor-movement use of these keys to preserve.
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      // Left/Right only, not Tab/Shift+Tab — Shift+Tab never reliably
+      // reaches this handler in the WebKitGTK view this app ships in
+      // (confirmed: tabindex="-1" on every button ruled out native focus
+      // traversal as the cause, so the keydown itself isn't arriving as
+      // `{ key: "Tab", shiftKey: true }`, or isn't arriving at all), so
+      // Tab is left to its default browser behavior rather than half-
+      // working. This is a single-line quick-filter field, not something
+      // meant to be edited by repositioning the caret, so there's no
+      // ordinary cursor-movement use of Left/Right being given up.
       e.preventDefault();
-      stepTab(e.key === "ArrowRight" || (e.key === "Tab" && !e.shiftKey));
+      stepTab(e.key === "ArrowRight");
     } else if (e.key === "Enter" && results[selected]) {
       results[selected].row.run();
     }
