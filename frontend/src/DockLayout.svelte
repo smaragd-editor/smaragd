@@ -19,6 +19,7 @@
   import { registerDockLayout, unregisterDockLayout } from "./stores/dockLayoutRegistry.svelte";
   import { themeState } from "./stores/theme.svelte";
   import { settingsStore } from "./stores/settings.svelte";
+  import { project } from "./stores/project.svelte";
 
   const STORAGE_KEY = "smaragd.dock-layout.v1";
 
@@ -292,6 +293,29 @@
     // leaving every later toggle unable to re-trigger this effect at all.
     const theme = themeState.dark ? themeDark : themeLight;
     api?.updateOptions({ theme });
+  });
+
+  // The Editor/Preview tabs show which document they currently hold —
+  // neither the real app's own dock_tab_viewer.rs does this (its tab
+  // titles are static "Editor"/"Preview" labels too), but with several
+  // panels open at once it's otherwise not obvious which is showing what
+  // without clicking into each one. Reads openIds (not just
+  // project.selectedPath) as its own statement, same reasoning as the
+  // theme effect above — otherwise a panel added *after* the document
+  // changed would never get its title updated, since the effect's first
+  // run (before either panel exists) wouldn't have read openIds at all.
+  $effect(() => {
+    const editorOpen = openIds.has("editor");
+    const previewOpen = openIds.has("preview");
+    if (!api || (!editorOpen && !previewOpen)) return;
+    const path = project.selectedPath;
+    const name = path ? (path.split("/").pop() ?? path).replace(/\.md$/, "") : null;
+    if (editorOpen) {
+      api.getPanel("editor")?.api.setTitle(name ? `Editor — ${name}` : PANEL_TITLES.editor);
+    }
+    if (previewOpen) {
+      api.getPanel("preview")?.api.setTitle(name ? `Preview — ${name}` : PANEL_TITLES.preview);
+    }
   });
 
   onMount(() => {
