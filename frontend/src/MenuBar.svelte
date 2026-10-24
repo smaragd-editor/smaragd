@@ -82,6 +82,11 @@
     | {
         label: string;
         shortcutId?: string;
+        /** A literal shortcut label, for an item with no SHORTCUT_ACTIONS
+         * catalog entry to look up — Cut/Copy/Paste's native Ctrl+X/C/V,
+         * which this port dispatches straight to document.execCommand
+         * rather than through the app's own shortcut-action system. */
+        shortcutText?: string;
         action: () => void;
         disabled?: boolean;
         checked?: boolean;
@@ -516,9 +521,9 @@
       label: "Edit",
       mnemonic: "E",
       items: () => [
-        { label: "Cut", action: () => document.execCommand("cut") },
-        { label: "Copy", action: () => document.execCommand("copy") },
-        { label: "Paste", action: () => document.execCommand("paste") },
+        { label: "Cut", shortcutText: "Ctrl+X", action: () => document.execCommand("cut") },
+        { label: "Copy", shortcutText: "Ctrl+C", action: () => document.execCommand("copy") },
+        { label: "Paste", shortcutText: "Ctrl+V", action: () => document.execCommand("paste") },
         { separator: true },
         {
           label: "Find and Replace",
@@ -933,8 +938,10 @@
                             <span class="check">{sub.checked ? "●" : ""}</span>
                             <span>{sub.label}</span>
                           </span>
-                          {#if sub.shortcutId}
-                            <span class="shortcut">{shortcutLabel(sub.shortcutId) ?? ""}</span>
+                          {#if sub.shortcutId || sub.shortcutText}
+                            <span class="shortcut">
+                              {sub.shortcutText ?? (sub.shortcutId && shortcutLabel(sub.shortcutId)) ?? ""}
+                            </span>
                           {/if}
                         </button>
                       {/if}
@@ -951,8 +958,10 @@
                 onclick={() => run(item.action)}
               >
                 <span>{item.label}</span>
-                {#if item.shortcutId}
-                  <span class="shortcut">{shortcutLabel(item.shortcutId) ?? ""}</span>
+                {#if item.shortcutId || item.shortcutText}
+                  <span class="shortcut">
+                    {item.shortcutText ?? (item.shortcutId && shortcutLabel(item.shortcutId)) ?? ""}
+                  </span>
                 {/if}
               </button>
             {/if}
