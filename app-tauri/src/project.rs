@@ -556,6 +556,40 @@ pub fn search_everywhere_text(root: String, query: String) -> Result<Vec<TextSea
 }
 
 #[derive(Serialize)]
+pub struct FuzzyMatch {
+    /// The matched candidate's position in the `candidates` list this came
+    /// from — the frontend already holds the richer row data (context,
+    /// click handler, ...) for each candidate; this just reorders/filters
+    /// it, rather than round-tripping that data through Rust too.
+    index: usize,
+    score: u32,
+}
+
+/// Fuzzy-ranks `candidates` against `query` via `core::fuzzy::fuzzy_rank` —
+/// the real `nucleo-matcher`-backed subsequence scorer (Helix picker's own
+/// engine), replacing SearchEverywhere.svelte's previous hand-rolled TS
+/// substring/subsequence scorer. `paths` tunes the matcher's bonuses for
+/// `/`-separated paths (document names); pass `false` for plain labels
+/// (action/setting names). An empty `query` returns every candidate in its
+/// original order, each scored 0, same as `fuzzy_rank` itself.
+#[tauri::command]
+pub fn fuzzy_rank_strings(
+    candidates: Vec<String>,
+    query: String,
+    limit: usize,
+    paths: bool,
+) -> Vec<FuzzyMatch> {
+    let indexed: Vec<(usize, String)> = candidates.into_iter().enumerate().collect();
+    smaragd_core::fuzzy::fuzzy_rank(&indexed, |(_, s)| s.as_str(), &query, limit, paths)
+        .into_iter()
+        .map(|(item, score)| FuzzyMatch {
+            index: item.0,
+            score,
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
 pub struct CreateResult {
     tree: BinderNodeDto,
     path: String,

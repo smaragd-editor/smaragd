@@ -56,6 +56,7 @@ pub fn run() {
             project::cycle_binder_color_mode,
             project::set_binder_color_mode,
             project::search_everywhere_text,
+            project::fuzzy_rank_strings,
             project::project_meta_fields,
             project::set_book_title,
             project::set_book_subtitle,

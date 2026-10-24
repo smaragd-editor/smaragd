@@ -29,26 +29,22 @@
   const MAX_RESULTS = 30;
   const LINE_PREVIEW_CHARS = 90;
 
-  /** A subsequence match (every query char appears in order, not
-   * necessarily contiguous) scored by how compact and how early the match
-   * is — standard "quick open" fuzzy ranking, replacing a plain substring
-   * filter so e.g. "cm1" finds "Chapter Mystery 1". Returns `null` for no
-   * match at all. */
-  function fuzzyScore(target: string, query: string): number | null {
-    if (!query) return 0;
-    const t = target.toLowerCase();
-    const q = query.toLowerCase();
-    let from = 0;
-    let first = -1;
-    let last = -1;
-    for (const ch of q) {
-      const idx = t.indexOf(ch, from);
-      if (idx === -1) return null;
-      if (first === -1) first = idx;
-      last = idx;
-      from = idx + 1;
-    }
-    return (last - first - q.length + 1) * 1000 + first;
+  type FuzzyMatch = { index: number; score: number };
+
+  /** Fuzzy-ranks `candidates` against `query` via core::fuzzy::fuzzy_rank
+   * (nucleo-matcher, the Helix picker's own engine) — real fzf-style
+   * subsequence scoring with path-aware bonuses, rather than reimplementing
+   * that matching in TS. `paths` matches fuzzy_rank's own: true for
+   * document names (`/`-separated), false for plain action/setting
+   * labels. */
+  async function fuzzyRank(
+    candidates: string[],
+    query: string,
+    limit: number,
+    paths: boolean,
+  ): Promise<FuzzyMatch[]> {
+    if (candidates.length === 0) return [];
+    return invoke<FuzzyMatch[]>("fuzzy_rank_strings", { candidates, query, limit, paths });
   }
 
   function truncate(text: string, max: number): string {
@@ -180,14 +176,36 @@
   // --- Rows ---------------------------------------------------------------
   type Row = { title: string; context: string; run: () => void };
 
-  function rankedRows<T>(items: T[], text: (item: T) => string, limit: number, toRow: (item: T) => Row): Row[] {
-    return items
-      .map((item) => ({ item, score: fuzzyScore(text(item), query) }))
-      .filter((r): r is { item: T; score: number } => r.score !== null)
-      .sort((a, b) => a.score - b.score)
-      .slice(0, limit)
-      .map((r) => toRow(r.item));
-  }
+  // Re-ranked (via fuzzyRank, above) whenever the query, the active tab (it
+  // changes the limit — ALL_SECTION_LIMIT per section on the All tab,
+  // MAX_RESULTS on a single-tab view, same as the old rankedRows calls
+  // took), or a candidate list itself changes. Debounced lightly so fast
+  // typing coalesces into one Tauri round trip per pause rather than one
+  // per keystroke.
+  let documentRanks = $state<FuzzyMatch[]>([]);
+  let actionRanks = $state<FuzzyMatch[]>([]);
+  let settingRanks = $state<FuzzyMatch[]>([]);
+  let rankDebounce: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    const q = query;
+    const docs = allDocuments.map((d) => d.name);
+    const actions = availableActions.map((a) => a.label);
+    const settings = settingTargets.map((s) => s.label);
+    const limit = tab === "All" ? ALL_SECTION_LIMIT : MAX_RESULTS;
+    clearTimeout(rankDebounce);
+    rankDebounce = setTimeout(async () => {
+      const [d, a, s] = await Promise.all([
+        fuzzyRank(docs, q, limit, true),
+        fuzzyRank(actions, q, limit, false),
+        fuzzyRank(settings, q, limit, false),
+      ]);
+      documentRanks = d;
+      actionRanks = a;
+      settingRanks = s;
+    }, 50);
+    return () => clearTimeout(rankDebounce);
+  });
 
   function select(path: string) {
     openDocument(path);
@@ -209,28 +227,29 @@
     onClose();
   }
 
-  function documentRows(limit: number): Row[] {
-    return rankedRows(allDocuments, (d) => d.name, limit, (d) => ({
-      title: d.name.replace(/\.md$/, ""),
-      context: relativeFolder(d.path),
-      run: () => select(d.path),
-    }));
+  function documentRows(ranks: FuzzyMatch[]): Row[] {
+    return ranks.map(({ index }) => {
+      const d = allDocuments[index];
+      return {
+        title: d.name.replace(/\.md$/, ""),
+        context: relativeFolder(d.path),
+        run: () => select(d.path),
+      };
+    });
   }
 
-  function actionRows(limit: number): Row[] {
-    return rankedRows(availableActions, (a) => a.label, limit, (a) => ({
-      title: a.label,
-      context: shortcutLabel(a.id),
-      run: () => runAction(a.id),
-    }));
+  function actionRows(ranks: FuzzyMatch[]): Row[] {
+    return ranks.map(({ index }) => {
+      const a = availableActions[index];
+      return { title: a.label, context: shortcutLabel(a.id), run: () => runAction(a.id) };
+    });
   }
 
-  function settingRows(limit: number): Row[] {
-    return rankedRows(settingTargets, (s) => s.label, limit, (s) => ({
-      title: s.label,
-      context: s.context,
-      run: () => openSetting(s.open),
-    }));
+  function settingRows(ranks: FuzzyMatch[]): Row[] {
+    return ranks.map(({ index }) => {
+      const s = settingTargets[index];
+      return { title: s.label, context: s.context, run: () => openSetting(s.open) };
+    });
   }
 
   function textRows(limit: number): Row[] {
@@ -244,20 +263,20 @@
   const results = $derived.by((): { section?: string; row: Row }[] => {
     if (tab === "All") {
       const sections: [string, Row[]][] = [
-        ["Documents", documentRows(ALL_SECTION_LIMIT)],
-        ["Actions", actionRows(ALL_SECTION_LIMIT)],
-        ["Settings", settingRows(ALL_SECTION_LIMIT)],
+        ["Documents", documentRows(documentRanks)],
+        ["Actions", actionRows(actionRanks)],
+        ["Settings", settingRows(settingRanks)],
         ["Text", textRows(ALL_SECTION_LIMIT)],
       ];
       return sections.flatMap(([section, rows]) => rows.map((row) => ({ section, row })));
     }
     const rows =
       tab === "Documents"
-        ? documentRows(MAX_RESULTS)
+        ? documentRows(documentRanks)
         : tab === "Actions"
-          ? actionRows(MAX_RESULTS)
+          ? actionRows(actionRanks)
           : tab === "Settings"
-            ? settingRows(MAX_RESULTS)
+            ? settingRows(settingRanks)
             : textRows(MAX_RESULTS);
     return rows.map((row) => ({ row }));
   });
