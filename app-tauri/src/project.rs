@@ -424,6 +424,19 @@ pub fn project_create_from_template(
     Ok(project_summary(&project))
 }
 
+/// Save `root`'s current structure (folder/document names and content, plus
+/// its Research/Trash/Templates/Manuscript/World role assignments — never
+/// its narrative metadata, see `project_template::save_from_project`'s own
+/// doc comment) as a new custom template named `name`, so it shows up in
+/// future "New Project" template pickers. Returns the new template's id.
+#[tauri::command]
+pub fn project_save_as_template(root: String, name: String) -> Result<String, String> {
+    let project = load(&root)?;
+    let dir = project_template::global_project_templates_dir()
+        .ok_or("Couldn't determine templates directory")?;
+    project_template::save_from_project(&dir, &name, &project).map_err(|e| e.to_string())
+}
+
 /// No held state to release yet (see `project_open`'s doc comment) — kept as a
 /// real command now so the frontend's open/close lifecycle doesn't need to
 /// change shape once one exists.

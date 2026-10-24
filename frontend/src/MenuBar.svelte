@@ -439,6 +439,22 @@
     showToast("No plugin engine in this build — there's nothing to reload yet.");
   }
 
+  // The inverse of the New Project template picker: snapshots the open
+  // project's current folder/document shape (not its narrative metadata)
+  // as a new custom template, same as the real app's own
+  // prompt_save_project_as_template/save_project_as_template.
+  async function saveProjectAsTemplate() {
+    if (!project.value) return;
+    const name = await showPrompt("Save Project as Template:");
+    if (!name) return;
+    try {
+      await invoke("project_save_as_template", { root: project.value.root, name });
+      showToast(`Saved template "${name}"`);
+    } catch (err) {
+      showToast(`Couldn't save template: ${err}`);
+    }
+  }
+
   async function saveCurrentLayout() {
     if (!dockLayoutRegistry.api) return;
     const name = await showPrompt("Save current layout as:");
@@ -496,6 +512,11 @@
         },
         { label: "Go Back", shortcutId: "go_back", action: () => runShortcutAction("go_back") },
         { label: "Go Forward", shortcutId: "go_forward", action: () => runShortcutAction("go_forward") },
+        {
+          label: "Save Project as Template…",
+          action: saveProjectAsTemplate,
+          disabled: !hasProject,
+        },
         { separator: true },
         {
           label: "Import",

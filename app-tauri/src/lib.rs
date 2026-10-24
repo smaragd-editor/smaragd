@@ -34,6 +34,7 @@ pub fn run() {
             project::backup_run,
             project::backup_default_dir,
             project::project_create_from_template,
+            project::project_save_as_template,
             project::project_close,
             project::project_binder_tree,
             project::document_read,
