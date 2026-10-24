@@ -61,6 +61,28 @@
   let error = $state<string | null>(null);
   let dragOverPath = $state<string | null>(null);
 
+  // Daily Notes' folder setting (project_settings.rs's `daily_notes_folder`)
+  // is a strftime pattern — e.g. "Journal/%Y/%m" nests notes under a
+  // per-month folder — so only its first path segment names a folder that
+  // actually exists at the binder's top level; that's the one the 📔 icon
+  // marks, mirroring the role icons above but keyed by path rather than a
+  // stored FolderRole (Daily Notes isn't one).
+  let dailyNotesFolderPath = $state<string | null>(null);
+
+  $effect(() => {
+    const r = root;
+    invoke<{ daily_notes_enabled: boolean; daily_notes_folder: string }>("project_settings", {
+      root: r,
+    })
+      .then((settings) => {
+        const topSegment = settings.daily_notes_enabled
+          ? settings.daily_notes_folder.split("/")[0]?.trim()
+          : "";
+        dailyNotesFolderPath = topSegment ? `${r}/${topSegment}` : null;
+      })
+      .catch(() => (dailyNotesFolderPath = null));
+  });
+
   async function run<T>(promise: Promise<T>): Promise<T | undefined> {
     error = null;
     try {
@@ -297,6 +319,8 @@
         {/if}
         {#if n.role}
           <span class="role-icon" title={n.role}>{ROLE_ICONS[n.role]}</span>
+        {:else if n.path === dailyNotesFolderPath}
+          <span class="role-icon" title="Daily Notes">📔</span>
         {/if}
         <span class="name">{n.name}</span>
         <span class="actions">
