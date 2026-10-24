@@ -1,36 +1,47 @@
 <script lang="ts">
-  import { project, openDocument } from "./stores/project.svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { project, openDocument, gotoDocumentLine } from "./stores/project.svelte";
   import type { BinderNodeDto } from "./stores/project.svelte";
+  import { SHORTCUT_ACTIONS, effectiveCombo, runShortcutAction } from "./shortcuts";
+  import { requestSettings, requestProjectSettings } from "./stores/settingsRequest.svelte";
 
-  // The real Search Everywhere is a modal over documents/text/actions/
-  // settings all at once. This is document-title search only — full-text
-  // search would mean a new core command scanning every document's
-  // contents, out of scope for "wire up the menu item" on its own; the
-  // Command Prompt (shortcuts.ts's catalog) already covers the "actions"
-  // half of the real modal.
+  // IntelliJ-style Search Everywhere, matching the real app's own
+  // (app/src/ui/search_everywhere.rs): one modal over Documents (by name),
+  // Text (inside documents), Actions, and Settings, plus an "All" tab
+  // mixing a few top results from each. Text search is the one tab that
+  // needs a round trip — `search_everywhere_text` (app-tauri/src/
+  // project.rs) scans every document's on-disk content, debounced here
+  // rather than on every keystroke.
   //
   // Also doubles as the real app's separate "Open Document" quick-switcher
-  // (Cmd+P there) — this port's own Search Everywhere was already scoped
-  // down to exactly that (document-title search, no full-text/actions/
-  // settings), so building a second near-identical palette for a narrower
-  // version of the same thing wasn't worth it; `open_document` in
-  // shortcuts.ts just opens this same component.
+  // (Cmd+P there) — opening straight to the All tab already covers that
+  // case (type a name, hit Enter), so this port doesn't build a second,
+  // narrower palette for it; `open_document` in shortcuts.ts just opens
+  // this same component.
   let { onClose }: { onClose: () => void } = $props();
+
+  const TABS = ["All", "Documents", "Text", "Actions", "Settings"] as const;
+  type Tab = (typeof TABS)[number];
+
+  const MIN_TEXT_QUERY_CHARS = 3;
+  const ALL_SECTION_LIMIT = 5;
+  const MAX_RESULTS = 30;
+  const LINE_PREVIEW_CHARS = 90;
 
   /** A subsequence match (every query char appears in order, not
    * necessarily contiguous) scored by how compact and how early the match
    * is — standard "quick open" fuzzy ranking, replacing a plain substring
    * filter so e.g. "cm1" finds "Chapter Mystery 1". Returns `null` for no
    * match at all. */
-  function fuzzyScore(name: string, query: string): number | null {
+  function fuzzyScore(target: string, query: string): number | null {
     if (!query) return 0;
-    const target = name.toLowerCase();
+    const t = target.toLowerCase();
     const q = query.toLowerCase();
     let from = 0;
     let first = -1;
     let last = -1;
     for (const ch of q) {
-      const idx = target.indexOf(ch, from);
+      const idx = t.indexOf(ch, from);
       if (idx === -1) return null;
       if (first === -1) first = idx;
       last = idx;
@@ -39,9 +50,25 @@
     return (last - first - q.length + 1) * 1000 + first;
   }
 
+  function truncate(text: string, max: number): string {
+    return text.length > max ? `${text.slice(0, max)}…` : text;
+  }
+
   let query = $state("");
+  let tab = $state<Tab>("All");
   let selected = $state(0);
 
+  function setTab(next: Tab) {
+    tab = next;
+    selected = 0;
+  }
+
+  function stepTab(forward: boolean) {
+    const i = TABS.indexOf(tab);
+    setTab(TABS[(i + (forward ? 1 : TABS.length - 1)) % TABS.length]);
+  }
+
+  // --- Documents --------------------------------------------------------
   function collectDocuments(node: BinderNodeDto, out: { name: string; path: string }[]) {
     if (node.kind === "Document") {
       out.push({ name: node.name, path: node.path });
@@ -56,18 +83,192 @@
     return out;
   });
 
-  const results = $derived(
-    allDocuments
-      .map((d) => ({ doc: d, score: fuzzyScore(d.name, query) }))
-      .filter((r): r is { doc: { name: string; path: string }; score: number } => r.score !== null)
-      .sort((a, b) => a.score - b.score)
-      .slice(0, 30)
-      .map((r) => r.doc),
+  function relativeFolder(path: string): string {
+    const root = project.value?.root ?? "";
+    const rel = path.startsWith(root) ? path.slice(root.length + 1) : path;
+    const idx = rel.lastIndexOf("/");
+    return idx >= 0 ? rel.slice(0, idx) : "";
+  }
+
+  // --- Text ---------------------------------------------------------------
+  type TextHit = { path: string; display: string; line: number; line_text: string };
+  let textHits = $state<TextHit[]>([]);
+  let textLoading = $state(false);
+  let textDebounce: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    const q = query;
+    const root = project.value?.root;
+    const wantsText = tab === "All" || tab === "Text";
+    clearTimeout(textDebounce);
+    if (!wantsText || !root || q.trim().length < MIN_TEXT_QUERY_CHARS) {
+      textHits = [];
+      textLoading = false;
+      return;
+    }
+    textLoading = true;
+    textDebounce = setTimeout(async () => {
+      try {
+        textHits = await invoke<TextHit[]>("search_everywhere_text", { root, query: q });
+      } catch {
+        textHits = [];
+      } finally {
+        textLoading = false;
+      }
+    }, 150);
+    return () => clearTimeout(textDebounce);
+  });
+
+  // --- Actions --------------------------------------------------------
+  // Excludes the three `inlineConsumed` actions (they need a live editor
+  // cursor — see shortcuts.ts's doc comment — which a click in this modal
+  // doesn't have) and Search Everywhere itself, same exclusions the real
+  // app's own `search_everywhere_actions` makes.
+  const availableActions = SHORTCUT_ACTIONS.filter(
+    (a) => !a.inlineConsumed && a.id !== "search_everywhere",
   );
+
+  function shortcutLabel(actionId: string): string {
+    const action = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+    if (!action) return "";
+    const combo = effectiveCombo(action);
+    if (!combo || combo.key === "") return "";
+    const mod = combo.ctrl_or_cmd ? "Ctrl+" : "";
+    const alt = combo.alt ? "Alt+" : "";
+    const shift = combo.shift ? "Shift+" : "";
+    return `${mod}${alt}${shift}${combo.key.toUpperCase()}`;
+  }
+
+  // --- Settings -----------------------------------------------------------
+  // Category-level only, no per-field keyword index (the real app's
+  // SETTINGS_INDEX) — this port's settings dialogs don't have one built
+  // yet, and a category is still a real, useful jump target on its own.
+  const APP_SETTINGS_CATEGORIES = [
+    "General",
+    "Appearance",
+    "Editor",
+    "SpellCheck",
+    "Templates",
+    "Versions",
+    "Sync",
+    "Pomodoro",
+    "Shortcuts",
+  ];
+  const PROJECT_SETTINGS_CATEGORIES = ["Binder", "DailyNotes", "FolderRoles", "Colors"];
+
+  type SettingTarget = { label: string; context: string; open: () => void };
+
+  const settingTargets = $derived.by((): SettingTarget[] => {
+    const rows: SettingTarget[] = APP_SETTINGS_CATEGORIES.map((category) => ({
+      label: category.replace(/([a-z])([A-Z])/g, "$1 $2"),
+      context: "Settings",
+      open: () => requestSettings(category),
+    }));
+    if (project.value) {
+      for (const category of PROJECT_SETTINGS_CATEGORIES) {
+        rows.push({
+          label: category.replace(/([a-z])([A-Z])/g, "$1 $2"),
+          context: "Project Settings",
+          open: () => requestProjectSettings(category),
+        });
+      }
+    }
+    return rows;
+  });
+
+  // --- Rows ---------------------------------------------------------------
+  type Row = { title: string; context: string; run: () => void };
+
+  function rankedRows<T>(items: T[], text: (item: T) => string, limit: number, toRow: (item: T) => Row): Row[] {
+    return items
+      .map((item) => ({ item, score: fuzzyScore(text(item), query) }))
+      .filter((r): r is { item: T; score: number } => r.score !== null)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, limit)
+      .map((r) => toRow(r.item));
+  }
 
   function select(path: string) {
     openDocument(path);
     onClose();
+  }
+
+  function selectText(path: string, line: number) {
+    gotoDocumentLine(path, line);
+    onClose();
+  }
+
+  function runAction(id: string) {
+    runShortcutAction(id);
+    onClose();
+  }
+
+  function openSetting(open: () => void) {
+    open();
+    onClose();
+  }
+
+  function documentRows(limit: number): Row[] {
+    return rankedRows(allDocuments, (d) => d.name, limit, (d) => ({
+      title: d.name.replace(/\.md$/, ""),
+      context: relativeFolder(d.path),
+      run: () => select(d.path),
+    }));
+  }
+
+  function actionRows(limit: number): Row[] {
+    return rankedRows(availableActions, (a) => a.label, limit, (a) => ({
+      title: a.label,
+      context: shortcutLabel(a.id),
+      run: () => runAction(a.id),
+    }));
+  }
+
+  function settingRows(limit: number): Row[] {
+    return rankedRows(settingTargets, (s) => s.label, limit, (s) => ({
+      title: s.label,
+      context: s.context,
+      run: () => openSetting(s.open),
+    }));
+  }
+
+  function textRows(limit: number): Row[] {
+    return textHits.slice(0, limit).map((hit) => ({
+      title: truncate(hit.line_text.trim(), LINE_PREVIEW_CHARS),
+      context: `${hit.display}:${hit.line}`,
+      run: () => selectText(hit.path, hit.line),
+    }));
+  }
+
+  const results = $derived.by((): { section?: string; row: Row }[] => {
+    if (tab === "All") {
+      const sections: [string, Row[]][] = [
+        ["Documents", documentRows(ALL_SECTION_LIMIT)],
+        ["Actions", actionRows(ALL_SECTION_LIMIT)],
+        ["Settings", settingRows(ALL_SECTION_LIMIT)],
+        ["Text", textRows(ALL_SECTION_LIMIT)],
+      ];
+      return sections.flatMap(([section, rows]) => rows.map((row) => ({ section, row })));
+    }
+    const rows =
+      tab === "Documents"
+        ? documentRows(MAX_RESULTS)
+        : tab === "Actions"
+          ? actionRows(MAX_RESULTS)
+          : tab === "Settings"
+            ? settingRows(MAX_RESULTS)
+            : textRows(MAX_RESULTS);
+    return rows.map((row) => ({ row }));
+  });
+
+  function emptyMessage(): string {
+    if (tab === "Text" || tab === "All") {
+      if (project.value && textLoading) return "Searching…";
+      if (query.trim().length < MIN_TEXT_QUERY_CHARS && tab === "Text") {
+        return "Type at least 3 characters to search text.";
+      }
+    }
+    return "No results.";
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -79,8 +280,11 @@
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       selected = Math.max(selected - 1, 0);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      stepTab(!e.shiftKey);
     } else if (e.key === "Enter" && results[selected]) {
-      select(results[selected].path);
+      results[selected].row.run();
     }
   }
 </script>
@@ -94,24 +298,37 @@
     aria-modal="true"
     tabindex="-1"
   >
+    <div class="tabs">
+      {#each TABS as t (t)}
+        <button class:active={tab === t} onclick={() => setTab(t)}>{t}</button>
+      {/each}
+    </div>
     <!-- svelte-ignore a11y_autofocus -->
     <input
       type="text"
-      placeholder="Search documents…"
+      placeholder="Search documents, text, actions, and settings…"
       bind:value={query}
       oninput={() => (selected = 0)}
       autofocus
     />
     <ul>
-      {#each results as doc, i (doc.path)}
+      {#each results as { section, row }, i (i)}
+        {#if section}
+          {#if i === 0 || results[i - 1].section !== section}
+            <li class="section">{section}</li>
+          {/if}
+        {/if}
         <li>
-          <button class:selected={i === selected} onclick={() => select(doc.path)}>
-            {doc.name}
+          <button class:selected={i === selected} onclick={row.run}>
+            <span class="title">{row.title}</span>
+            {#if row.context}
+              <span class="context">{row.context}</span>
+            {/if}
           </button>
         </li>
       {/each}
       {#if results.length === 0}
-        <li class="empty">No matching documents</li>
+        <li class="empty">{emptyMessage()}</li>
       {/if}
     </ul>
   </div>
@@ -130,15 +347,36 @@
   }
 
   .palette {
-    width: 32rem;
+    width: 36rem;
     max-width: 90vw;
-    max-height: 60vh;
+    max-height: 65vh;
     background: var(--color-bg);
     border-radius: 6px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.4rem 0.6rem 0;
+  }
+
+  .tabs button {
+    background: none;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: var(--color-fg-muted);
+    border-bottom: 2px solid transparent;
+  }
+
+  .tabs button.active {
+    color: var(--color-fg);
+    border-bottom-color: var(--color-accent);
   }
 
   input {
@@ -159,8 +397,17 @@
     overflow: auto;
   }
 
+  .section {
+    padding: 0.4rem 0.8rem 0.15rem;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: var(--color-fg-muted);
+  }
+
   button {
-    display: block;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
     width: 100%;
     background: none;
     border: none;
@@ -172,6 +419,18 @@
 
   button.selected {
     background: var(--color-selected-bg);
+  }
+
+  .title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .context {
+    flex-shrink: 0;
+    color: var(--color-fg-muted);
+    font-size: 0.75rem;
   }
 
   .empty {

@@ -15,7 +15,8 @@
   // reason (no real sync pairing — Phase 6's Sync panel is demo-only),
   // noted inline rather than silently omitted, same as every other scope
   // cut in this port. Spell Check now has a real one.
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose, initialCategory = null }: { onClose: () => void; initialCategory?: string | null } =
+    $props();
 
   let downloading = $state<string | null>(null);
 
@@ -59,7 +60,14 @@
     "Shortcuts",
   ];
 
-  let active = $state<Category>("General");
+  // svelte-ignore state_referenced_locally -- deliberately a one-time read:
+  // this dialog is remounted fresh each time it opens, so `active` should
+  // seed from whatever category the opener asked for, not keep tracking it.
+  let active = $state<Category>(
+    initialCategory && (categories as string[]).includes(initialCategory)
+      ? (initialCategory as Category)
+      : "General",
+  );
 
   function update() {
     settingsStore.value = { ...settingsStore.value };

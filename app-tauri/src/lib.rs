@@ -50,6 +50,7 @@ pub fn run() {
             project::open_daily_note,
             project::cycle_binder_color_mode,
             project::set_binder_color_mode,
+            project::search_everywhere_text,
             project_settings::project_settings,
             project_settings::set_project_daily_notes,
             project_settings::set_folder_role,

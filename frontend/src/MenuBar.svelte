@@ -20,6 +20,14 @@
   import { showToast } from "./stores/toast.svelte";
   import { applyTheme } from "./stores/theme.svelte";
   import { exportRequest, requestExport, closeExportRequest } from "./stores/exportRequest.svelte";
+  import {
+    settingsRequest,
+    requestSettings,
+    closeSettingsRequest,
+    projectSettingsRequest,
+    requestProjectSettings,
+    closeProjectSettingsRequest,
+  } from "./stores/settingsRequest.svelte";
   import { showPrompt } from "./stores/promptDialog.svelte";
 
   // Desktop menu bar matching the real egui app's 8-menu structure
@@ -437,10 +445,10 @@
         },
         { label: "Export Manuscript…", action: () => requestExport(), disabled: !hasProject },
         { separator: true },
-        { label: "Settings…", action: () => (showSettings = true) },
+        { label: "Settings…", action: () => requestSettings() },
         {
           label: "Project Settings…",
-          action: () => (showProjectSettings = true),
+          action: () => requestProjectSettings(),
           disabled: !hasProject,
         },
         { separator: true },
@@ -631,8 +639,6 @@
     }
   }
 
-  let showSettings = $state(false);
-  let showProjectSettings = $state(false);
   let showAbout = $state(false);
   let showCommandPrompt = $state(false);
   let showSearchEverywhere = $state(false);
@@ -644,9 +650,9 @@
     registerShortcutHandler("new_project", pickAndCreateProject);
     registerShortcutHandler("open_project", pickAndOpenProject);
     registerShortcutHandler("close_project", closeProject);
-    registerShortcutHandler("open_settings", () => (showSettings = true));
+    registerShortcutHandler("open_settings", () => requestSettings());
     registerShortcutHandler("open_project_settings", () => {
-      if (project.value) showProjectSettings = true;
+      if (project.value) requestProjectSettings();
     });
     registerShortcutHandler("find_replace", openFindReplace);
     registerShortcutHandler("command_prompt", () => (showCommandPrompt = true));
@@ -785,15 +791,15 @@
   {/each}
 </nav>
 
-{#if showSettings}
+{#if settingsRequest.open}
   {#await import("./SettingsDialog.svelte") then { default: SettingsDialog }}
-    <SettingsDialog onClose={() => (showSettings = false)} />
+    <SettingsDialog onClose={closeSettingsRequest} initialCategory={settingsRequest.category} />
   {/await}
 {/if}
 
-{#if showProjectSettings}
+{#if projectSettingsRequest.open}
   {#await import("./ProjectSettingsDialog.svelte") then { default: ProjectSettingsDialog }}
-    <ProjectSettingsDialog onClose={() => (showProjectSettings = false)} />
+    <ProjectSettingsDialog onClose={closeProjectSettingsRequest} initialCategory={projectSettingsRequest.category} />
   {/await}
 {/if}
 

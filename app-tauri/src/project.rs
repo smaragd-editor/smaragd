@@ -272,6 +272,62 @@ pub fn render_markdown(markdown: String) -> String {
     smaragd_core::markdown::render_html(&markdown)
 }
 
+/// A single Search Everywhere text-search hit.
+#[derive(Serialize)]
+pub struct TextSearchHit {
+    path: String,
+    display: String,
+    line: usize,
+    line_text: String,
+    byte_start: usize,
+}
+
+/// Cap on hits returned — also what keeps a large project from being
+/// scanned past the first page of results, matching the real app's own
+/// `search_everywhere.rs::search_text`/`MAX_RESULTS` (which this mirrors
+/// rather than reuses, since `app-tauri` doesn't depend on the `app`
+/// crate).
+const TEXT_SEARCH_LIMIT: usize = 50;
+/// Shortest query text search runs for — one or two characters would match
+/// nearly every line of a manuscript.
+const MIN_TEXT_QUERY_CHARS: usize = 3;
+
+/// Search Everywhere's "Text" tab: a case-insensitive scan of every
+/// document's on-disk content (not a live editor buffer — this port
+/// autosaves on an 800ms debounce rather than holding open tabs' text
+/// server-side, so disk is already near-live).
+#[tauri::command]
+pub fn search_everywhere_text(root: String, query: String) -> Result<Vec<TextSearchHit>, String> {
+    if query.chars().count() < MIN_TEXT_QUERY_CHARS {
+        return Ok(Vec::new());
+    }
+    let project = load(&root)?;
+    let store = native_store();
+    let mut hits = Vec::new();
+    'docs: for path in project.tree.document_paths() {
+        let Ok(content) = store.read_to_string(&path) else {
+            continue;
+        };
+        let relative = path.strip_prefix(&project.root).unwrap_or(&path);
+        let display =
+            smaragd_core::project::model::document_label(&relative.to_string_lossy()).to_string();
+        for (byte_start, _) in smaragd_core::search::find_matches(&content, &query, false) {
+            if hits.len() == TEXT_SEARCH_LIMIT {
+                break 'docs;
+            }
+            let (line, line_text) = smaragd_core::search::line_at(&content, byte_start);
+            hits.push(TextSearchHit {
+                path: path.display().to_string(),
+                display: display.clone(),
+                line,
+                line_text,
+                byte_start,
+            });
+        }
+    }
+    Ok(hits)
+}
+
 #[derive(Serialize)]
 pub struct CreateResult {
     tree: BinderNodeDto,

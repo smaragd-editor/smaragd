@@ -11,11 +11,19 @@
   // and the Daily Notes template picker — each its own chunk of core
   // methods with no existing command either, same shape as what's here,
   // just not wired yet.
-  let { onClose }: { onClose: () => void } = $props();
+  let { onClose, initialCategory = null }: { onClose: () => void; initialCategory?: string | null } =
+    $props();
 
   type Category = "Binder" | "DailyNotes" | "FolderRoles" | "Colors";
   const categories: Category[] = ["Binder", "DailyNotes", "FolderRoles", "Colors"];
-  let active = $state<Category>("Binder");
+  // svelte-ignore state_referenced_locally -- deliberately a one-time read:
+  // this dialog is remounted fresh each time it opens, so `active` should
+  // seed from whatever category the opener asked for, not keep tracking it.
+  let active = $state<Category>(
+    initialCategory && (categories as string[]).includes(initialCategory)
+      ? (initialCategory as Category)
+      : "Binder",
+  );
 
   type FolderRoleEntry = { path: string; role: FolderRole };
   type ProjectSettings = {
