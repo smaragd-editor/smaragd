@@ -227,6 +227,27 @@ export function onEditorChange(text: string) {
   scheduleSpellCheck();
 }
 
+/** MetadataPanel.svelte's entry point for a metadata edit: `newContents` is
+ * the whole document with its frontmatter block already folded in (from
+ * `frontmatter_write_back`, pure text-in/text-out same as `render_markdown`
+ * — the Tauri-port equivalent of the real app's `apply_metadata_edits_if_changed`,
+ * which mutates the live editor buffer directly rather than writing straight
+ * to disk). Unlike `onEditorChange` (driven by CodeMirror's own keystroke,
+ * which has already updated what's on screen before this would run), this
+ * change originates *outside* the editor, so it also has to push the new
+ * text into the live view itself — everything after that is identical:
+ * same debounced autosave/preview/spell-check pipeline a body edit goes
+ * through. */
+export function applyDocumentMetaEdit(newContents: string) {
+  project.documentText = newContents;
+  editorRef?.setDocument(newContents);
+  project.saveStatus = "idle";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDocument, 800);
+  schedulePreview();
+  scheduleSpellCheck();
+}
+
 function schedulePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(async () => {

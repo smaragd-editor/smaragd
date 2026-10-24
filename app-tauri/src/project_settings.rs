@@ -71,6 +71,33 @@ pub fn project_settings(root: String) -> Result<ProjectSettingsDto, String> {
     })
 }
 
+#[derive(Serialize)]
+pub struct PicklistOptionsDto {
+    types: Vec<String>,
+    statuses: Vec<String>,
+    povs: Vec<String>,
+}
+
+/// The Metadata panel's Type/Status/POV dropdown options — each field's
+/// assigned picklist folder's document titles (`Project::picklist_documents`),
+/// or empty (meaning: that field stays free text) if none is assigned.
+#[tauri::command]
+pub fn picklist_options(root: String) -> Result<PicklistOptionsDto, String> {
+    let project = load(&root)?;
+    let titles = |field: PicklistField| -> Vec<String> {
+        project
+            .picklist_documents(field)
+            .into_iter()
+            .map(|node| smaragd_core::project::model::document_label(&node.name).to_string())
+            .collect()
+    };
+    Ok(PicklistOptionsDto {
+        types: titles(PicklistField::Type),
+        statuses: titles(PicklistField::Status),
+        povs: titles(PicklistField::Pov),
+    })
+}
+
 #[tauri::command]
 pub fn set_project_daily_notes(
     root: String,

@@ -9,12 +9,18 @@
 //! Phase 2's `project_binder_tree`) — no new core logic, only IPC DTOs
 //! around what's there. Deliberately lighter than the real egui panels:
 //! Version Activity skips the live "this session's git actions" log (app-
-//! level state not available here), and Metadata is read-only (no save-
-//! frontmatter command yet) — each a later refinement, not required to
+//! level state not available here) — a later refinement, not required to
 //! prove these panels dock and show real project data. Dashboard's bar
 //! charts (originally egui_plot-specific) are fully ported now too, as
 //! plain inline SVG on the frontend side (DashboardPanel.svelte) — no
 //! charting library pulled in just for six fixed, non-interactive bars.
+//! Metadata is a full, editable form now too (MetadataPanel.svelte):
+//! `document_metadata`/`frontmatter_write_back` are pure text-in/text-out,
+//! like `render_markdown`, so the frontend parses/writes the live editor
+//! buffer directly rather than round-tripping through disk — the Tauri-port
+//! equivalent of the real app's `refresh_metadata_if_needed`/
+//! `apply_metadata_edits_if_changed`, which do the same against `self.editor`'s
+//! live buffer rather than the saved file.
 
 use std::path::Path;
 
@@ -78,21 +84,66 @@ pub struct DocumentMetaDto {
     pov: Option<String>,
     word_count_target: Option<u32>,
     tags: Vec<String>,
+    /// `frontmatter::count_words` — the body only, frontmatter excluded.
+    word_count: usize,
+    /// `markdown::inline_tags` — every `#tag` written in the body, not just
+    /// the frontmatter `tags:` list (see metadata_panel.rs's own doc
+    /// comment on this distinction).
+    inline_tags: Vec<String>,
+    /// `frontmatter::extra_fields` — YAML keys this form has no field for,
+    /// shown read-only.
+    extra_fields: Vec<(String, String)>,
 }
 
+/// Parses `contents` (the open document's live text, not necessarily saved
+/// yet) directly — pure, like `render_markdown`, rather than re-reading the
+/// file from disk by path: the frontend always already has the live buffer
+/// in `project.documentText`, and parsing that instead is what keeps this
+/// panel in sync with in-progress edits the same way the real app's
+/// `refresh_metadata_if_needed` (which also reads the live editor buffer,
+/// never disk) does.
 #[tauri::command]
-pub fn document_metadata(root: String, path: String) -> Result<DocumentMetaDto, String> {
-    let project = load(&root)?;
-    let meta = project
-        .document_meta(Path::new(&path))
-        .map_err(|e| e.to_string())?;
-    Ok(DocumentMetaDto {
+pub fn document_metadata(contents: String) -> DocumentMetaDto {
+    let meta = smaragd_core::frontmatter::parse(&contents);
+    let body = smaragd_core::frontmatter::strip(&contents);
+    DocumentMetaDto {
         section_type: meta.section_type,
         status: meta.status,
         pov: meta.pov,
         word_count_target: meta.word_count_target,
         tags: meta.tags,
-    })
+        word_count: smaragd_core::frontmatter::count_words(&contents),
+        inline_tags: smaragd_core::markdown::inline_tags(body),
+        extra_fields: smaragd_core::frontmatter::extra_fields(&contents),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct DocumentMetaInput {
+    section_type: Option<String>,
+    status: Option<String>,
+    pov: Option<String>,
+    word_count_target: Option<u32>,
+    tags: Vec<String>,
+}
+
+/// Folds `meta` into `contents`' frontmatter block (creating one if there
+/// wasn't any) and returns the new full document text — pure, same as
+/// `document_metadata` above; the frontend is responsible for pushing the
+/// result into the live editor buffer and letting the normal autosave path
+/// persist it, exactly as if the user had typed the change into the `---`
+/// block themselves. Preserves any YAML keys this form doesn't know about
+/// (see `frontmatter::write_back`'s own doc comment).
+#[tauri::command]
+pub fn frontmatter_write_back(contents: String, meta: DocumentMetaInput) -> String {
+    let meta = smaragd_core::frontmatter::DocumentMeta {
+        section_type: meta.section_type,
+        status: meta.status,
+        pov: meta.pov,
+        word_count_target: meta.word_count_target,
+        tags: meta.tags,
+    };
+    smaragd_core::frontmatter::write_back(&contents, &meta)
 }
 
 #[derive(Serialize)]
