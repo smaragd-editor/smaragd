@@ -172,7 +172,7 @@ impl Project {
 
         let meta = load_metadata(store.as_ref(), root).unwrap_or_default();
         let mut tree = scan_project(store.as_ref(), root);
-        apply_order(&mut tree.root, root, &meta.node_order);
+        apply_order(&mut tree.root, root, &meta.node_order, &meta.folder_roles);
 
         Ok(Project {
             root: root.to_path_buf(),
@@ -244,7 +244,12 @@ impl Project {
 
     pub fn rescan(&mut self) {
         let mut tree = scan_project(self.store.as_ref(), &self.root);
-        apply_order(&mut tree.root, &self.root, &self.meta.node_order);
+        apply_order(
+            &mut tree.root,
+            &self.root,
+            &self.meta.node_order,
+            &self.meta.folder_roles,
+        );
         self.tree = tree;
         // Every create/rename/move/delete/trash operation calls `rescan` — the one
         // choke point where *which* documents exist can change, so it's also where
@@ -524,21 +529,54 @@ fn relative_key(root: &Path, path: &Path) -> String {
         .join("/")
 }
 
+/// Whether `node` is itself a folder holding the `Trash` role — the one
+/// exception to plain `node_order` position in `apply_order` below.
+fn is_trash_folder(
+    node: &BinderNode,
+    root: &Path,
+    folder_roles: &BTreeMap<String, FolderRole>,
+) -> bool {
+    matches!(node.kind, BinderNodeKind::Folder { .. })
+        && folder_roles.get(&relative_key(root, &node.path)) == Some(&FolderRole::Trash)
+}
+
 /// Reorder each folder's children to match any recorded order for that folder,
 /// appending children with no recorded position (e.g. newly discovered files never
 /// created through smaragd) at the end in their existing (alphabetical) order.
-fn apply_order(node: &mut BinderNode, root: &Path, order: &BTreeMap<String, Vec<String>>) {
+fn apply_order(
+    node: &mut BinderNode,
+    root: &Path,
+    order: &BTreeMap<String, Vec<String>>,
+    folder_roles: &BTreeMap<String, FolderRole>,
+) {
     if let BinderNodeKind::Folder { children } = &mut node.kind {
-        if let Some(order_list) = order.get(&relative_key(root, &node.path)) {
-            children.sort_by_key(|child| {
-                order_list
-                    .iter()
-                    .position(|name| name == &child.name)
-                    .unwrap_or(usize::MAX)
-            });
-        }
+        let position = |child: &BinderNode| -> usize {
+            order
+                .get(&relative_key(root, &node.path))
+                .and_then(|order_list| order_list.iter().position(|name| name == &child.name))
+                .unwrap_or(usize::MAX)
+        };
+        // A Trash-role folder always sorts after every *other* folder
+        // sibling — but never reorders relative to a document sibling, so
+        // it isn't necessarily the literal last child if documents are
+        // interspersed; it's the last *folder*. Comparing two non-folder
+        // (or non-Trash-involving) pairs falls straight through to plain
+        // node_order position, same as before this existed.
+        children.sort_by(|a, b| {
+            let a_trash = is_trash_folder(a, root, folder_roles);
+            let b_trash = is_trash_folder(b, root, folder_roles);
+            let both_folders = matches!(a.kind, BinderNodeKind::Folder { .. })
+                && matches!(b.kind, BinderNodeKind::Folder { .. });
+            if both_folders && (a_trash || b_trash) {
+                a_trash
+                    .cmp(&b_trash)
+                    .then_with(|| position(a).cmp(&position(b)))
+            } else {
+                position(a).cmp(&position(b))
+            }
+        });
         for child in children.iter_mut() {
-            apply_order(child, root, order);
+            apply_order(child, root, order, folder_roles);
         }
     }
 }
@@ -712,6 +750,79 @@ mod tests {
         let order = project.manuscript_document_order();
 
         assert_eq!(order, vec![second, first]);
+    }
+
+    #[test]
+    fn trash_folder_sorts_after_a_later_created_sibling_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::initialize(dir.path()).unwrap();
+        let trash = project.create_folder(dir.path(), "Trash").unwrap();
+        project
+            .set_folder_role(&trash, Some(FolderRole::Trash))
+            .unwrap();
+        // Created after Trash, so node_order alone would put it last —
+        // apply_order's Trash-pinning should override that.
+        project.create_folder(dir.path(), "Chapters").unwrap();
+
+        let names: Vec<&str> = project
+            .tree
+            .root
+            .children()
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Chapters", "Trash"]);
+    }
+
+    #[test]
+    fn trash_folder_does_not_reorder_relative_to_a_document_sibling() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::initialize(dir.path()).unwrap();
+        // Created before the document, so node_order already puts Trash
+        // first — a document sibling must stay exactly where it was,
+        // Trash-pinning only applies between folders.
+        let trash = project.create_folder(dir.path(), "Trash").unwrap();
+        project
+            .set_folder_role(&trash, Some(FolderRole::Trash))
+            .unwrap();
+        project.create_document(dir.path(), "Notes").unwrap();
+
+        let names: Vec<&str> = project
+            .tree
+            .root
+            .children()
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Trash", "Notes.md"]);
+    }
+
+    #[test]
+    fn trash_folder_sorts_after_every_other_folder_even_when_reordered_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::initialize(dir.path()).unwrap();
+        let trash = project.create_folder(dir.path(), "Trash").unwrap();
+        project
+            .set_folder_role(&trash, Some(FolderRole::Trash))
+            .unwrap();
+        let chapters = project.create_folder(dir.path(), "Chapters").unwrap();
+        // Explicitly move Trash to the front — the Trash-pinning rule
+        // should still win over a manual node_order placement.
+        project
+            .move_item_before(&trash, &chapters)
+            .expect("reorder Trash before Chapters");
+
+        let names: Vec<&str> = project
+            .tree
+            .root
+            .children()
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Chapters", "Trash"]);
     }
 
     #[test]
