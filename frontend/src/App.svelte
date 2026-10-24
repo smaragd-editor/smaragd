@@ -9,6 +9,7 @@
   import { applyTheme } from "./stores/theme.svelte";
   import { focusMode } from "./stores/focusMode.svelte";
   import { handleGlobalKeydown, installBuiltinShortcutHandlers } from "./shortcuts";
+  import { installDoubleTapShift } from "./doubleTapShift";
 
   // Menu bar + global keyboard shortcuts are desktop-only — mobile already
   // has its own navigation (MobileShell.svelte, Phase 9) and no keyboard to
@@ -17,7 +18,11 @@
     loadSettings().then(applyTheme);
     installBuiltinShortcutHandlers();
     window.addEventListener("keydown", handleGlobalKeydown);
-    return () => window.removeEventListener("keydown", handleGlobalKeydown);
+    const uninstallDoubleTapShift = installDoubleTapShift();
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeydown);
+      uninstallDoubleTapShift();
+    };
   });
 </script>
 

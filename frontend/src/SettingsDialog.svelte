@@ -173,6 +173,17 @@
             />
             Show the Window button bar above the dock
           </label>
+          <label class="row">
+            <input
+              type="checkbox"
+              checked={!settingsStore.value.double_shift_search_disabled}
+              onchange={(e) => {
+                settingsStore.value.double_shift_search_disabled = !e.currentTarget.checked;
+                update();
+              }}
+            />
+            Double-tap Shift to open Search Everywhere
+          </label>
         {:else if active === "Appearance"}
           <label class="row">
             Theme
