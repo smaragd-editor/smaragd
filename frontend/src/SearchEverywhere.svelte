@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { project, openDocument, gotoDocumentLine } from "./stores/project.svelte";
   import type { BinderNodeDto } from "./stores/project.svelte";
@@ -273,6 +274,12 @@
 
   let inputEl = $state<HTMLInputElement>();
 
+  // Not left to the <input>'s own `autofocus` attribute — unreliable in
+  // this app's WebKitGTK webview for an element inserted after the page's
+  // initial load (same class of focus quirk as MenuBar's tab buttons not
+  // taking focus on click, found earlier).
+  onMount(() => inputEl?.focus());
+
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       onClose();
@@ -333,14 +340,12 @@
         </button>
       {/each}
     </div>
-    <!-- svelte-ignore a11y_autofocus -->
     <input
       type="text"
       placeholder="Search documents, text, actions, and settings…"
       bind:value={query}
       bind:this={inputEl}
       oninput={() => (selected = 0)}
-      autofocus
     />
     <ul>
       {#each results as { section, row }, i (i)}
