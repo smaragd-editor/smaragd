@@ -86,7 +86,7 @@
         disabled?: boolean;
         checked?: boolean;
       }
-    | { label: string; submenu: () => Item[] };
+    | { label: string; submenu: () => Item[]; disabled?: boolean };
 
   function toggle(menu: string) {
     openMenu = openMenu === menu ? null : menu;
@@ -169,7 +169,9 @@
   function scopedFocusables(container: HTMLElement | undefined): HTMLElement[] {
     if (!container) return [];
     return Array.from(
-      container.querySelectorAll<HTMLElement>(":scope > .item:not(:disabled), :scope > .submenu-trigger"),
+      container.querySelectorAll<HTMLElement>(
+        ":scope > .item:not(:disabled), :scope > .submenu-trigger:not(.disabled)",
+      ),
     );
   }
 
@@ -226,7 +228,8 @@
 
   async function onDropdownKeydown(e: KeyboardEvent, index: number) {
     const active = document.activeElement as HTMLElement | null;
-    const isTrigger = active?.classList.contains("submenu-trigger") ?? false;
+    const isTrigger =
+      (active?.classList.contains("submenu-trigger") && !active.classList.contains("disabled")) ?? false;
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
@@ -330,6 +333,12 @@
   }
 
   const hasProject = $derived(!!project.value);
+  // Every `dock(id)` call below is a silent no-op without a project — the
+  // whole dock layout (DockLayout.svelte, which owns dockLayoutRegistry.api)
+  // only mounts once ProjectView.svelte has a project to show
+  // (frontend/src/ProjectView.svelte's `{#if !project.value}` empty-state
+  // branch), so there's no dock tab for these to open at all until then.
+  const hasDocument = $derived(!!project.selectedPath);
 
   // "Use the open screen" was a dead end: it isn't visible once a project
   // is already open, which is exactly when someone wants File > Open
@@ -400,9 +409,10 @@
   }
 
   async function saveCurrentLayout() {
+    if (!dockLayoutRegistry.api) return;
     const name = await showPrompt("Save current layout as:");
     if (!name) return;
-    dockLayoutRegistry.api?.saveCurrentLayoutAs(name);
+    dockLayoutRegistry.api.saveCurrentLayoutAs(name);
     showToast(`Layout "${name}" saved`);
   }
 
@@ -436,6 +446,7 @@
         { separator: true },
         {
           label: "Import",
+          disabled: !hasProject,
           submenu: () => [
             { label: "Word Document (.docx)…", action: () => pickAndImport("docx") },
             { label: "EPUB (.epub)…", action: () => pickAndImport("epub") },
@@ -463,27 +474,57 @@
         { label: "Copy", action: () => document.execCommand("copy") },
         { label: "Paste", action: () => document.execCommand("paste") },
         { separator: true },
-        { label: "Find and Replace", action: () => runShortcutAction("find_replace") },
+        {
+          label: "Find and Replace",
+          action: () => runShortcutAction("find_replace"),
+          disabled: !hasDocument,
+        },
       ],
     },
     {
       id: "view",
       label: "View",
       items: () => [
-        { label: "Editor", action: () => dock("editor") },
-        { label: "Preview", shortcutId: "toggle_preview", action: () => dock("preview") },
-        { label: "Corkboard", shortcutId: "toggle_corkboard", action: () => dock("corkboard") },
-        { label: "Story Grid", shortcutId: "toggle_story_grid", action: () => dock("storygrid") },
+        { label: "Editor", action: () => dock("editor"), disabled: !hasProject },
+        {
+          label: "Preview",
+          shortcutId: "toggle_preview",
+          action: () => dock("preview"),
+          disabled: !hasProject,
+        },
+        {
+          label: "Corkboard",
+          shortcutId: "toggle_corkboard",
+          action: () => dock("corkboard"),
+          disabled: !hasProject,
+        },
+        {
+          label: "Story Grid",
+          shortcutId: "toggle_story_grid",
+          action: () => dock("storygrid"),
+          disabled: !hasProject,
+        },
         {
           label: "Belief Timeline",
           shortcutId: "toggle_belief_timeline",
           action: () => dock("belieftimeline"),
+          disabled: !hasProject,
         },
         { separator: true },
-        { label: "Binder", action: () => dock("binder") },
-        { label: "Metadata", shortcutId: "edit_metadata", action: () => dock("metadata") },
-        { label: "Backlinks", shortcutId: "toggle_backlinks", action: () => dock("backlinks") },
-        { label: "Tags", shortcutId: "toggle_tags", action: () => dock("tags") },
+        { label: "Binder", action: () => dock("binder"), disabled: !hasProject },
+        {
+          label: "Metadata",
+          shortcutId: "edit_metadata",
+          action: () => dock("metadata"),
+          disabled: !hasProject,
+        },
+        {
+          label: "Backlinks",
+          shortcutId: "toggle_backlinks",
+          action: () => dock("backlinks"),
+          disabled: !hasProject,
+        },
+        { label: "Tags", shortcutId: "toggle_tags", action: () => dock("tags"), disabled: !hasProject },
         { separator: true },
         { label: "Theme", submenu: themeSubmenuItems },
         ...(hasProject ? [{ label: "Color Binder By", submenu: colorBinderBySubmenuItems } as Item] : []),
@@ -497,14 +538,14 @@
         { label: "Toggle Spell Check", action: () => runShortcutAction("toggle_spell_check") },
         { separator: true },
         { label: "Command Prompt", action: () => runShortcutAction("command_prompt") },
-        { label: "Pomodoro Timer", action: () => dock("pomodoro") },
-        { label: "Word Count", action: () => dock("wordcount") },
-        { label: "Streak", action: () => dock("streak") },
-        { label: "Dashboard", action: () => dock("dashboard") },
-        { label: "Bookmarks", action: () => dock("bookmarks") },
-        { label: "Notes", action: () => dock("notes") },
+        { label: "Pomodoro Timer", action: () => dock("pomodoro"), disabled: !hasProject },
+        { label: "Word Count", action: () => dock("wordcount"), disabled: !hasProject },
+        { label: "Streak", action: () => dock("streak"), disabled: !hasProject },
+        { label: "Dashboard", action: () => dock("dashboard"), disabled: !hasProject },
+        { label: "Bookmarks", action: () => dock("bookmarks"), disabled: !hasProject },
+        { label: "Notes", action: () => dock("notes"), disabled: !hasProject },
         { separator: true },
-        { label: "Sync Panel", action: () => dock("sync") },
+        { label: "Sync Panel", action: () => dock("sync"), disabled: !hasProject },
         { label: "Sync Now", action: () => runShortcutAction("sync_now") },
         { separator: true },
         { label: "Reload Plugins", action: reloadPlugins },
@@ -524,31 +565,32 @@
         { label: "Push", action: () => runShortcutAction("git_push"), disabled: !hasProject },
         { label: "Pull", action: () => runShortcutAction("git_pull"), disabled: !hasProject },
         { separator: true },
-        { label: "Version Activity", action: () => dock("versionactivity") },
+        { label: "Version Activity", action: () => dock("versionactivity"), disabled: !hasProject },
       ],
     },
     {
       id: "collaborate",
       label: "Collaborate",
       items: () => [
-        { label: "Host Session", action: () => dock("collab") },
-        { label: "Join Session…", action: () => dock("collab") },
-        { label: "End Session", action: () => dock("collab") },
+        { label: "Host Session", action: () => dock("collab"), disabled: !hasProject },
+        { label: "Join Session…", action: () => dock("collab"), disabled: !hasProject },
+        { label: "End Session", action: () => dock("collab"), disabled: !hasProject },
         { separator: true },
-        { label: "Collaboration Panel", action: () => dock("collab") },
+        { label: "Collaboration Panel", action: () => dock("collab"), disabled: !hasProject },
       ],
     },
     {
       id: "window",
       label: "Window",
       items: () => [
-        { label: "Save Current Layout…", action: saveCurrentLayout },
+        { label: "Save Current Layout…", action: saveCurrentLayout, disabled: !hasProject },
         { label: "Layouts", action: () => {}, disabled: true },
         ...layoutItems(),
         { separator: true },
         {
           label: "Restore Default Layout",
           action: () => dockLayoutRegistry.api?.resetLayout(),
+          disabled: !hasProject,
         },
       ],
     },
@@ -725,12 +767,14 @@
             {:else if "submenu" in item}
               <div
                 class="submenu-trigger"
+                class:disabled={item.disabled}
                 role="menuitem"
                 aria-haspopup="true"
                 aria-expanded={submenuTrigger?.index === i}
+                aria-disabled={item.disabled}
                 tabindex="-1"
                 data-index={i}
-                onmouseenter={(e) => openSubmenu(e, i)}
+                onmouseenter={(e) => !item.disabled && openSubmenu(e, i)}
                 onmouseleave={scheduleCloseSubmenu}
               >
                 <span>{item.label}</span>
@@ -945,10 +989,14 @@
     cursor: default;
   }
 
-  .submenu-trigger:hover,
-  .submenu-trigger:focus {
+  .submenu-trigger:hover:not(.disabled),
+  .submenu-trigger:focus:not(.disabled) {
     background: var(--color-selected-bg);
     outline: none;
+  }
+
+  .submenu-trigger.disabled {
+    color: var(--color-fg-muted);
   }
 
   .submenu-trigger .arrow {
