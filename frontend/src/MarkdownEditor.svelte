@@ -86,6 +86,18 @@
   // history each time the caller echoes `value` back via a prop update).
   export function setDocument(text: string) {
     if (!view) return;
+    // A no-op when the text is already current — e.g. registerEditor
+    // (stores/project.svelte.ts) calls this unconditionally on every
+    // (re)mount as a catch-up safety net for one specific race (a panel
+    // reopened before `value`'s initial prop reflects the already-open
+    // document), but that leaves it calling this right after `onMount`'s
+    // own `EditorState.create({ doc: value, ... })` already set the exact
+    // same text, every ordinary mount. A full `{from: 0, to: length}`
+    // replace discards the whole change in one transaction, so even a
+    // same-text one still asks CodeMirror to map the current selection
+    // through it; skipping it entirely when nothing actually changed is
+    // cheap insurance against that doing anything surprising to the cursor.
+    if (text === view.state.doc.toString()) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
     });
