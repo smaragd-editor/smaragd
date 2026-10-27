@@ -1,0 +1,478 @@
+//! Phase 7: the remaining DockTab panels (app/src/app/dock.rs) that were
+//! StubPanel placeholders since Phase 5 — Backlinks, Tags, Metadata, Word
+//! Count, Streak, Bookmarks, Notes, Dashboard, Version Activity. Belief
+//! Timeline needs no new command: it's just the existing story_cards_list
+//! data (Phase 4), filtered/ordered differently in the frontend.
+//!
+//! All read-mostly, reusing `Project` query methods that already exist and
+//! already recompute fresh from disk on every call (same convention as
+//! Phase 2's `project_binder_tree`) — no new core logic, only IPC DTOs
+//! around what's there. Deliberately lighter than the real egui panels:
+//! Version Activity skips the live "this session's git actions" log (app-
+//! level state not available here) — a later refinement, not required to
+//! prove these panels dock and show real project data. Dashboard's bar
+//! charts (originally egui_plot-specific) are fully ported now too, as
+//! plain inline SVG on the frontend side (DashboardPanel.svelte) — no
+//! charting library pulled in just for six fixed, non-interactive bars.
+//! Metadata is a full, editable form now too (MetadataPanel.svelte):
+//! `document_metadata`/`frontmatter_write_back` are pure text-in/text-out,
+//! like `render_markdown`, so the frontend parses/writes the live editor
+//! buffer directly rather than round-tripping through disk — the Tauri-port
+//! equivalent of the real app's `refresh_metadata_if_needed`/
+//! `apply_metadata_edits_if_changed`, which do the same against `self.editor`'s
+//! live buffer rather than the saved file.
+
+use std::path::Path;
+
+use serde::Serialize;
+use smaragd_core::git;
+use smaragd_core::project::{Project, WordCountScope};
+use smaragd_core::streak;
+use uuid::Uuid;
+
+fn load(root: &str) -> Result<Project, String> {
+    Project::load_from_folder(Path::new(root)).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct BacklinkDto {
+    source_path: String,
+    source_title: String,
+    snippet: String,
+}
+
+#[tauri::command]
+pub fn backlinks_for(root: String, path: String) -> Result<Vec<BacklinkDto>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .backlinks(Path::new(&path))
+        .into_iter()
+        .map(|b| BacklinkDto {
+            source_path: b.source_path.display().to_string(),
+            source_title: b.source_title,
+            snippet: b.snippet,
+        })
+        .collect())
+}
+
+#[derive(Serialize)]
+pub struct TagGroupDto {
+    tag: String,
+    documents: Vec<(String, String)>,
+}
+
+#[tauri::command]
+pub fn all_tags(root: String) -> Result<Vec<String>, String> {
+    Ok(load(&root)?.all_tags())
+}
+
+#[tauri::command]
+pub fn documents_with_tag(root: String, tag: String) -> Result<TagGroupDto, String> {
+    let project = load(&root)?;
+    let documents = project
+        .documents_with_tag(&tag)
+        .into_iter()
+        .map(|(path, title)| (path.display().to_string(), title))
+        .collect();
+    Ok(TagGroupDto { tag, documents })
+}
+
+#[derive(Serialize)]
+pub struct DocumentMetaDto {
+    section_type: Option<String>,
+    status: Option<String>,
+    pov: Option<String>,
+    word_count_target: Option<u32>,
+    tags: Vec<String>,
+    /// `frontmatter::count_words` — the body only, frontmatter excluded.
+    word_count: usize,
+    /// `markdown::inline_tags` — every `#tag` written in the body, not just
+    /// the frontmatter `tags:` list (see metadata_panel.rs's own doc
+    /// comment on this distinction).
+    inline_tags: Vec<String>,
+    /// `frontmatter::extra_fields` — YAML keys this form has no field for,
+    /// shown read-only.
+    extra_fields: Vec<(String, String)>,
+}
+
+/// Parses `contents` (the open document's live text, not necessarily saved
+/// yet) directly — pure, like `render_markdown`, rather than re-reading the
+/// file from disk by path: the frontend always already has the live buffer
+/// in `project.documentText`, and parsing that instead is what keeps this
+/// panel in sync with in-progress edits the same way the real app's
+/// `refresh_metadata_if_needed` (which also reads the live editor buffer,
+/// never disk) does.
+#[tauri::command]
+pub fn document_metadata(contents: String) -> DocumentMetaDto {
+    let meta = smaragd_core::frontmatter::parse(&contents);
+    let body = smaragd_core::frontmatter::strip(&contents);
+    DocumentMetaDto {
+        section_type: meta.section_type,
+        status: meta.status,
+        pov: meta.pov,
+        word_count_target: meta.word_count_target,
+        tags: meta.tags,
+        word_count: smaragd_core::frontmatter::count_words(&contents),
+        inline_tags: smaragd_core::markdown::inline_tags(body),
+        extra_fields: smaragd_core::frontmatter::extra_fields(&contents),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct DocumentMetaInput {
+    pub section_type: Option<String>,
+    pub status: Option<String>,
+    pub pov: Option<String>,
+    pub word_count_target: Option<u32>,
+    pub tags: Vec<String>,
+}
+
+/// Folds `meta` into `contents`' frontmatter block (creating one if there
+/// wasn't any) and returns the new full document text — pure, same as
+/// `document_metadata` above; the frontend is responsible for pushing the
+/// result into the live editor buffer and letting the normal autosave path
+/// persist it, exactly as if the user had typed the change into the `---`
+/// block themselves. Preserves any YAML keys this form doesn't know about
+/// (see `frontmatter::write_back`'s own doc comment).
+#[tauri::command]
+pub fn frontmatter_write_back(contents: String, meta: DocumentMetaInput) -> String {
+    let meta = smaragd_core::frontmatter::DocumentMeta {
+        section_type: meta.section_type,
+        status: meta.status,
+        pov: meta.pov,
+        word_count_target: meta.word_count_target,
+        tags: meta.tags,
+    };
+    smaragd_core::frontmatter::write_back(&contents, &meta)
+}
+
+#[derive(Serialize)]
+pub struct WordCountDto {
+    manuscript_only: usize,
+    everything_except_trash: usize,
+    draft_target_words: Option<u32>,
+    today_target_words: Option<u32>,
+    today_words_so_far: u32,
+}
+
+#[tauri::command]
+pub fn word_count(root: String) -> Result<WordCountDto, String> {
+    let project = load(&root)?;
+    let scope = project.meta.word_count_scope;
+    let today_words_so_far =
+        (project.word_count(scope) as u32).saturating_sub(project.today_baseline_words(scope));
+    Ok(WordCountDto {
+        manuscript_only: project.word_count(WordCountScope::ManuscriptOnly),
+        everything_except_trash: project.word_count(WordCountScope::EverythingExceptTrash),
+        draft_target_words: project.meta.draft_target_words,
+        today_target_words: project.meta.today_target_words,
+        today_words_so_far,
+    })
+}
+
+#[derive(Serialize)]
+pub struct StreakDto {
+    enabled: bool,
+    status: &'static str,
+    actual_this_week: u32,
+    target_this_week: u32,
+}
+
+#[tauri::command]
+pub fn streak_status(root: String) -> Result<StreakDto, String> {
+    let project = load(&root)?;
+    let meta = &project.meta;
+    if !meta.streak_enabled {
+        return Ok(StreakDto {
+            enabled: false,
+            status: "disabled",
+            actual_this_week: 0,
+            target_this_week: 0,
+        });
+    }
+    let today = chrono::Local::now().date_naive();
+    let scope = meta.word_count_scope;
+    let today_words_so_far =
+        (project.word_count(scope) as u32).saturating_sub(project.today_baseline_words(scope));
+    let status = streak::evaluate_streak(
+        &meta.streak_schedule,
+        meta.streak_evaluation_mode,
+        meta.streak_red_threshold_weeks,
+        &meta.daily_word_counts,
+        today,
+    );
+    let (actual_this_week, target_this_week) = streak::current_week_progress(
+        &meta.streak_schedule,
+        &meta.daily_word_counts,
+        today_words_so_far,
+        today,
+    );
+    Ok(StreakDto {
+        enabled: true,
+        status: match status {
+            streak::StreakStatus::Disabled => "disabled",
+            streak::StreakStatus::InsufficientData => "insufficient_data",
+            streak::StreakStatus::Green => "green",
+            streak::StreakStatus::Yellow => "yellow",
+            streak::StreakStatus::Red => "red",
+        },
+        actual_this_week,
+        target_this_week,
+    })
+}
+
+#[derive(Serialize)]
+pub struct ResolvedBookmarkDto {
+    id: String,
+    path: String,
+    line: usize,
+    document_stem: Option<String>,
+}
+
+#[tauri::command]
+pub fn bookmarks_list(root: String) -> Result<Vec<ResolvedBookmarkDto>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .resolved_bookmarks()
+        .into_iter()
+        .map(|b| ResolvedBookmarkDto {
+            id: b.id.to_string(),
+            path: b.path.display().to_string(),
+            line: b.line,
+            document_stem: b.document_stem,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn bookmark_delete(root: String, id: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    project.delete_bookmark(id).map_err(|e| e.to_string())
+}
+
+/// Adds a bookmark at `(path, line)` if none exists there yet, removes it
+/// otherwise — backs the Toggle Bookmark shortcut. Returns whether the line
+/// is bookmarked after the call (for the status toast).
+#[tauri::command]
+pub fn bookmark_toggle(root: String, path: String, line: usize) -> Result<bool, String> {
+    let mut project = load(&root)?;
+    project
+        .toggle_bookmark(Path::new(&path), line)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct ResolvedNoteDto {
+    id: String,
+    path: String,
+    line: usize,
+    column: usize,
+    text: String,
+    document_stem: Option<String>,
+}
+
+#[tauri::command]
+pub fn notes_list(root: String) -> Result<Vec<ResolvedNoteDto>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .resolved_notes()
+        .into_iter()
+        .map(|n| ResolvedNoteDto {
+            id: n.id.to_string(),
+            path: n.path.display().to_string(),
+            line: n.line,
+            column: n.column,
+            text: n.text,
+            document_stem: n.document_stem,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub fn note_delete(root: String, id: String) -> Result<(), String> {
+    let mut project = load(&root)?;
+    let id = Uuid::parse_str(&id).map_err(|e| e.to_string())?;
+    project.delete_note(id).map_err(|e| e.to_string())
+}
+
+/// The text of the note at the exact `(path, line, column)` position, if
+/// one exists — backs the Add Note at Cursor shortcut's prompt, which
+/// pre-fills from any note already at that position (editing in place)
+/// rather than always starting blank.
+#[tauri::command]
+pub fn note_text_at(
+    root: String,
+    path: String,
+    line: usize,
+    column: usize,
+) -> Result<Option<String>, String> {
+    let project = load(&root)?;
+    Ok(project
+        .notes_at(Path::new(&path), line)
+        .into_iter()
+        .find(|n| n.column == column)
+        .map(|n| n.text.clone()))
+}
+
+/// Adds a note at `(path, line, column)` if none exists there yet, else
+/// replaces its text — an empty `text` deletes it instead. Backs the Add
+/// Note at Cursor shortcut's save.
+#[tauri::command]
+pub fn note_upsert(
+    root: String,
+    path: String,
+    line: usize,
+    column: usize,
+    text: String,
+) -> Result<(), String> {
+    let mut project = load(&root)?;
+    project
+        .upsert_note(Path::new(&path), line, column, text)
+        .map_err(|e| e.to_string())
+}
+
+/// One bar in a day-window chart — `label` is the already-formatted x-axis
+/// text (`"Jan 5"`, matching the real app's `day_bar_chart`'s own
+/// `x_axis_formatter`), computed server-side so the frontend doesn't need
+/// its own date-formatting logic just for this.
+#[derive(Serialize)]
+pub struct DayBucket {
+    label: String,
+    value: u32,
+}
+
+/// How many trailing calendar days the daily bar charts cover — matches
+/// the real app's own `dashboard_panel::DAY_WINDOW`.
+const DAY_WINDOW: i64 = 60;
+
+#[derive(Serialize)]
+pub struct DashboardDto {
+    session_count: usize,
+    total_minutes: u64,
+    total_words: u64,
+    documents_created: usize,
+    word_counts: Vec<DayBucket>,
+    sessions: Vec<DayBucket>,
+    documents_created_by_day: Vec<DayBucket>,
+    documents_modified_by_day: Vec<DayBucket>,
+    /// Both metrics for the weekday/hour charts are sent together — the
+    /// real app recomputes on every frame when the user flips the Words/
+    /// Time toggle, but a Tauri command round trip is worth avoiding for
+    /// something this cheap to compute once.
+    weekday_words: [u64; 7],
+    weekday_minutes: [u64; 7],
+    hour_words: [u64; 24],
+    hour_minutes: [u64; 24],
+}
+
+#[tauri::command]
+pub fn dashboard_summary(root: String) -> Result<DashboardDto, String> {
+    use smaragd_core::dashboard::{
+        self, ActivityMetric, activity_by_hour, activity_by_weekday, count_by_day,
+        count_by_day_strings, last_n_days, sessions_per_day, system_time_to_local,
+    };
+
+    let project = load(&root)?;
+    let summary = dashboard::summary(&project.meta.session_log);
+
+    let today = chrono::Local::now().date_naive();
+    let days = last_n_days(today, DAY_WINDOW);
+    let day_label = |date: &chrono::NaiveDate| date.format("%b %-d").to_string();
+
+    let day_buckets = |counts: &std::collections::BTreeMap<chrono::NaiveDate, u32>| {
+        days.iter()
+            .map(|date| DayBucket {
+                label: day_label(date),
+                value: counts.get(date).copied().unwrap_or(0),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let word_counts = days
+        .iter()
+        .map(|date| DayBucket {
+            label: day_label(date),
+            value: project
+                .meta
+                .daily_word_counts
+                .get(&date.format("%Y-%m-%d").to_string())
+                .copied()
+                .unwrap_or(0),
+        })
+        .collect();
+    let sessions = day_buckets(&sessions_per_day(&project.meta.session_log));
+    let documents_created_by_day = day_buckets(&count_by_day_strings(
+        project.meta.document_created.values(),
+    ));
+    let documents_modified_by_day = day_buckets(&count_by_day(
+        project
+            .document_modified_times()
+            .into_values()
+            .map(system_time_to_local),
+    ));
+
+    Ok(DashboardDto {
+        session_count: summary.session_count,
+        total_minutes: summary.total_minutes,
+        total_words: summary.total_words,
+        documents_created: project.meta.document_created.len(),
+        word_counts,
+        sessions,
+        documents_created_by_day,
+        documents_modified_by_day,
+        weekday_words: activity_by_weekday(&project.meta.session_log, ActivityMetric::Words),
+        weekday_minutes: activity_by_weekday(&project.meta.session_log, ActivityMetric::Time),
+        hour_words: activity_by_hour(&project.meta.session_log, ActivityMetric::Words),
+        hour_minutes: activity_by_hour(&project.meta.session_log, ActivityMetric::Time),
+    })
+}
+
+#[derive(Serialize)]
+pub struct CommitDto {
+    hash: String,
+    author: String,
+    relative_date: String,
+    subject: String,
+}
+
+#[derive(Serialize)]
+pub struct VersionActivityDto {
+    git_available: bool,
+    dirty_files: Vec<String>,
+    commits: Vec<CommitDto>,
+}
+
+#[tauri::command]
+pub fn version_activity(root: String) -> Result<VersionActivityDto, String> {
+    let project = load(&root)?;
+    let git_available = project.meta.git_enabled && git::is_repo(&project.root);
+    if !git_available {
+        return Ok(VersionActivityDto {
+            git_available: false,
+            dirty_files: Vec::new(),
+            commits: Vec::new(),
+        });
+    }
+    let dirty_files = git::status(&project.root)
+        .map(|set| {
+            let mut paths: Vec<String> = set.into_iter().map(|p| p.display().to_string()).collect();
+            paths.sort();
+            paths
+        })
+        .unwrap_or_default();
+    let commits = git::log(&project.root, 20)
+        .into_iter()
+        .map(|c| CommitDto {
+            hash: c.hash,
+            author: c.author,
+            relative_date: c.relative_date,
+            subject: c.subject,
+        })
+        .collect();
+    Ok(VersionActivityDto {
+        git_available: true,
+        dirty_files,
+        commits,
+    })
+}
