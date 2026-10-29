@@ -60,6 +60,49 @@
   }
   header.top nav a:hover { color: var(--fg); }
 
+  .nav-toggle { display: none; }
+  .nav-toggle-label {
+    display: flex;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+  }
+  .nav-toggle-label span,
+  .nav-toggle-label span::before,
+  .nav-toggle-label span::after {
+    content: "";
+    display: block;
+    width: 20px;
+    height: 2px;
+    background: var(--fg);
+    position: relative;
+  }
+  .nav-toggle-label span::before { position: absolute; top: -6px; }
+  .nav-toggle-label span::after { position: absolute; top: 6px; }
+
+  header.top { position: relative; }
+  header.top nav {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 48px;
+    right: 0;
+    min-width: 200px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 0;
+    z-index: 10;
+  }
+  header.top nav a {
+    margin-left: 0;
+    padding: 10px 16px;
+  }
+  .nav-toggle:checked ~ nav { display: flex; }
+
   .hero {
     text-align: center;
     padding: 64px 0 56px;
@@ -223,6 +266,8 @@
         </svg>
         Smaragd
       </div>
+      <input type="checkbox" id="nav-toggle" class="nav-toggle">
+      <label for="nav-toggle" class="nav-toggle-label" aria-label="Toggle menu"><span></span></label>
       <nav>
         <a href="#collaboration">Collaboration</a>
         <a href="#sync">Sync (experimental)</a>
