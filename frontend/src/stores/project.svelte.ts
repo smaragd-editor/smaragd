@@ -730,6 +730,17 @@ export function findDocumentByStem(stem: string): string | null {
   return out.find((d) => d.stem.toLowerCase() === lower)?.path ?? null;
 }
 
+/** Every document's filename stem (minus `.md`) in the open project — the
+ * candidate source for the `[[wikilink]]` autocomplete popup
+ * (MarkdownEditor.svelte), matching the real app's own `note_titles`
+ * passed into `ui::editor_panel::show`. */
+export function noteTitles(): string[] {
+  if (!project.value) return [];
+  const out: { stem: string; path: string }[] = [];
+  collectDocumentStems(project.value.tree, out);
+  return out.map((d) => d.stem);
+}
+
 /** Backs the Activate Wikilink shortcut (Cmd/Ctrl+Enter by default, consumed
  * inside MarkdownEditor.svelte's own CodeMirror keymap — see that file):
  * resolves the `[[target]]` spanning `cursorByteOffset` in the open

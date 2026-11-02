@@ -756,7 +756,7 @@
   .toolbar {
     display: flex;
     justify-content: flex-end;
-    padding: 0.25rem 0.5rem;
+    padding: 0.25rem 0.5rem 0;
     font-size: 0.75rem;
   }
 
@@ -770,7 +770,7 @@
   }
 
   .tree {
-    padding: 0.5rem;
+    padding: 0.25rem 0.5rem 0.5rem;
     overflow: auto;
   }
 

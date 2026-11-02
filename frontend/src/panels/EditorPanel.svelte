@@ -204,7 +204,7 @@
     position: relative;
     display: flex;
     justify-content: flex-end;
-    padding: 0.2rem 0.4rem;
+    padding: 0.1rem 0.4rem;
     border-bottom: 1px solid var(--color-border);
   }
 
@@ -213,7 +213,7 @@
     border: none;
     cursor: pointer;
     font-size: 1rem;
-    padding: 0.15rem 0.5rem;
+    padding: 0.05rem 0.4rem;
     color: inherit;
   }
 

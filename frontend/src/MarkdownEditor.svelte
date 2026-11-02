@@ -13,14 +13,58 @@
   import { markdown } from "@codemirror/lang-markdown";
   import { languages } from "@codemirror/language-data";
   import { search, openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
+  import {
+    autocompletion,
+    acceptCompletion,
+    CompletionContext,
+    type CompletionResult,
+  } from "@codemirror/autocomplete";
   import { effectiveCombo, SHORTCUT_ACTIONS } from "./shortcuts";
   import type { KeyCombo } from "./stores/settings.svelte";
   import {
     project,
     activateWikilinkAtCursor,
     toggleBookmarkAtCursor,
+    noteTitles,
   } from "./stores/project.svelte";
+  import { filterCandidates } from "./autocomplete";
   import { requestNoteAtCursor } from "./stores/noteRequest.svelte";
+
+  // Obsidian-style `[[wikilink]]` autocomplete — the port equivalent of the
+  // real app's own ui/editor_panel.rs popup (active_wikilink_query +
+  // filter_candidates + apply_wikilink_completion), rebuilt on top of
+  // CodeMirror's own completion machinery instead: `matchBefore` finds the
+  // in-progress `[[query` the same way active_wikilink_query's `rfind("[[")`
+  // plus "no stray `[`/`]` since" does (it's end-anchored, so it naturally
+  // picks the *last* unclosed `[[` on the line), and `filter: false` keeps
+  // filterCandidates' own prefix-then-substring ordering instead of CM's
+  // fuzzy one.
+  const MAX_WIKILINK_SUGGESTIONS = 8;
+
+  function wikilinkCompletionSource(context: CompletionContext): CompletionResult | null {
+    const match = context.matchBefore(/\[\[[^[\]]*/);
+    if (!match) return null;
+    const query = match.text.slice(2);
+    const candidates = filterCandidates(noteTitles(), query).slice(0, MAX_WIKILINK_SUGGESTIONS);
+    if (candidates.length === 0) return null;
+    return {
+      from: match.from + 2,
+      filter: false,
+      options: candidates.map((title) => ({
+        label: title,
+        apply: (view: EditorView, _completion, from: number, to: number) => {
+          // Absorbs a `]]` right after the cursor so accepting a suggestion
+          // never produces doubled brackets — mirrors
+          // apply_wikilink_completion's own tail_start handling exactly.
+          const tailStart = view.state.sliceDoc(to, to + 2) === "]]" ? to + 2 : to;
+          view.dispatch({
+            changes: { from, to: tailStart, insert: `${title}]]` },
+            selection: { anchor: from + title.length + 2 },
+          });
+        },
+      })),
+    };
+  }
 
   // Phase 3 proof-of-concept: CodeMirror 6 in place of the plain <textarea>
   // from Phase 2. This is the highest-risk phase in the migration plan — the
@@ -140,9 +184,10 @@
         lineNumbers(),
         highlightActiveLine(),
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        keymap.of([...defaultKeymap, ...historyKeymap, { key: "Tab", run: acceptCompletion }]),
         inlineShortcutsKeymap(),
         markdown({ codeLanguages: languages }),
+        autocompletion({ override: [wikilinkCompletionSource] }),
         search(),
         misspellingsField,
         EditorView.lineWrapping,
