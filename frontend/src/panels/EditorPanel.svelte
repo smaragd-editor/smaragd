@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
   import MarkdownEditor from "../MarkdownEditor.svelte";
+  import RenderedMarkdown from "../RenderedMarkdown.svelte";
   import {
     project,
     onEditorChange,
@@ -165,7 +166,7 @@
     </div>
     <div class="main">
       {#if editorViewMode.mode === "reading"}
-        <div class="reading">{@html project.previewHtml}</div>
+        <div class="reading"><RenderedMarkdown html={project.previewHtml} /></div>
       {:else}
         <MarkdownEditor bind:this={editor} value={project.documentText} onChange={onEditorChange} />
       {/if}

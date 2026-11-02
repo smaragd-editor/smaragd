@@ -540,6 +540,7 @@ function schedulePreview() {
   previewTimer = setTimeout(async () => {
     project.previewHtml = await invoke<string>("render_markdown", {
       markdown: project.documentText,
+      noteTitles: noteTitles(),
     });
   }, 300);
 }

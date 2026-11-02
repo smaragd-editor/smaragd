@@ -136,11 +136,21 @@ fn current_sink<'a>(
 /// (egui's painter-based renderer) needs; it's plain CommonMark+tables/strikethrough
 /// HTML that a `<div>` can render directly. Wikilink/tag-aware preview is a
 /// later refinement once the Svelte preview pane needs it.
-pub fn render_html(markdown: &str) -> String {
+/// `note_titles` decides whether each wikilink renders resolved or broken
+/// (`wikilink_resolves`) — the HTML/Preview-pane counterpart of
+/// [`wikilink_resolves`]'s other caller, egui's native Preview panel.
+pub fn render_html(markdown: &str, note_titles: &[String]) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
+
+    // Same placeholder trick `parse()` uses for egui's native Preview: swap
+    // `[[Target]]`/`[[Target|Alias]]` (and `![[Target]]` embeds) for a marker
+    // pulldown-cmark's inline parser can't fragment, so it survives emphasis/
+    // link parsing intact, then expand it back into real HTML afterwards —
+    // see `expand_html_placeholders`.
+    let (markdown, wikilinks) = extract_wikilinks(markdown);
 
     // CommonMark's raw-HTML passthrough (`Event::Html`/`Event::InlineHtml`) is
     // written to the output verbatim by `html::push_html` — unlike `Text`,
@@ -150,13 +160,76 @@ pub fn render_html(markdown: &str) -> String {
     // `onerror=`-bearing tag would otherwise execute as live script there.
     // Treating raw HTML as literal text closes that off; nothing here needs
     // to actually render embedded HTML.
-    let parser = Parser::new_ext(markdown, options).map(|event| match event {
+    let parser = Parser::new_ext(&markdown, options).map(|event| match event {
         Event::Html(text) | Event::InlineHtml(text) => Event::Text(text),
         other => other,
     });
     let mut out = String::new();
     html::push_html(&mut out, parser);
+    expand_html_placeholders(&out, &wikilinks, note_titles)
+}
+
+/// Escapes `&`, `<`, `>`, and `"` for safe inclusion in HTML text/attribute
+/// content. pulldown-cmark's own escaping (used for ordinary `Event::Text`)
+/// isn't public, and the wikilink placeholders [`expand_html_placeholders`]
+/// expands bypass it entirely — they're spliced into the already-rendered
+/// HTML afterwards — so anything user-typed that ends up in an anchor's text
+/// or `data-wikilink` attribute needs its own escaping pass here.
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
     out
+}
+
+/// Replace every wikilink placeholder [`extract_wikilinks`] spliced into the
+/// markdown before parsing with real HTML, now that pulldown-cmark has
+/// rendered everything else — the HTML counterpart of [`expand_placeholders`]
+/// (which does the same job for egui's native Preview's `Span` tree instead).
+/// An `![[image.ext]]` embed becomes a plain `<img>`, same as a regular
+/// `![alt](path)` would; anything else becomes an `<a>` carrying the
+/// resolved/broken styling hook the frontend's Preview/Reading-view CSS
+/// keys off of (`data-wikilink`, "wikilink"/"wikilink broken").
+fn expand_html_placeholders(html: &str, wikilinks: &[WikilinkPlaceholder], note_titles: &[String]) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let Some(start) = rest.find(WIKILINK_MARK) else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..start]);
+        let after = &rest[start + WIKILINK_MARK.len_utf8()..];
+        let end = after.find(WIKILINK_MARK).expect("well-formed placeholder");
+        let index: usize = after[..end].parse().expect("well-formed placeholder");
+        let placeholder = &wikilinks[index];
+        if placeholder.is_embed && has_image_extension(&placeholder.target) {
+            out.push_str(&format!(
+                "<img src=\"{}\" alt=\"{}\">",
+                escape_html(&placeholder.target),
+                escape_html(&placeholder.display),
+            ));
+        } else {
+            let class = if wikilink_resolves(&placeholder.target, note_titles) {
+                "wikilink"
+            } else {
+                "wikilink broken"
+            };
+            out.push_str(&format!(
+                "<a href=\"#\" class=\"{class}\" data-wikilink=\"{}\">{}</a>",
+                escape_html(&placeholder.target),
+                escape_html(&placeholder.display),
+            ));
+        }
+        rest = &after[end + WIKILINK_MARK.len_utf8()..];
+    }
 }
 
 pub fn parse(markdown: &str) -> Vec<Block> {
@@ -1160,7 +1233,7 @@ mod tests {
 
     #[test]
     fn render_html_produces_basic_commonmark_markup() {
-        let html = render_html("# Title\n\nSome *emphasis* and **strong** text.\n");
+        let html = render_html("# Title\n\nSome *emphasis* and **strong** text.\n", &[]);
         assert!(html.contains("<h1>Title</h1>"));
         assert!(html.contains("<em>emphasis</em>"));
         assert!(html.contains("<strong>strong</strong>"));
@@ -1168,11 +1241,52 @@ mod tests {
 
     #[test]
     fn render_html_supports_tables_strikethrough_and_task_lists() {
-        let html =
-            render_html("| a | b |\n|---|---|\n| 1 | 2 |\n\n~~gone~~\n\n- [x] done\n- [ ] todo\n");
+        let html = render_html(
+            "| a | b |\n|---|---|\n| 1 | 2 |\n\n~~gone~~\n\n- [x] done\n- [ ] todo\n",
+            &[],
+        );
         assert!(html.contains("<table>"));
         assert!(html.contains("<del>gone</del>"));
         assert!(html.contains("checked"));
+    }
+
+    #[test]
+    fn render_html_turns_a_resolved_wikilink_into_an_anchor() {
+        let note_titles = vec!["Topic".to_string()];
+        let html = render_html("See [[Topic]] for more.", &note_titles);
+        assert!(
+            html.contains("<a href=\"#\" class=\"wikilink\" data-wikilink=\"Topic\">Topic</a>"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn render_html_turns_an_unresolved_wikilink_into_a_broken_anchor() {
+        let html = render_html("See [[Nope]] for more.", &[]);
+        assert!(
+            html.contains(
+                "<a href=\"#\" class=\"wikilink broken\" data-wikilink=\"Nope\">Nope</a>"
+            ),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn render_html_uses_the_alias_as_the_anchor_text() {
+        let note_titles = vec!["Topic".to_string()];
+        let html = render_html("See [[Topic|the topic]].", &note_titles);
+        assert!(
+            html.contains("data-wikilink=\"Topic\">the topic</a>"),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn render_html_escapes_wikilink_target_and_alias() {
+        let html = render_html(r#"See [[<script>|"quoted" & <b>]]."#, &[]);
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+        assert!(html.contains("&quot;quoted&quot; &amp; &lt;b&gt;"), "{html}");
+        assert!(!html.contains("<script>"), "{html}");
     }
 
     #[test]

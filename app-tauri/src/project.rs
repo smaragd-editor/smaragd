@@ -520,12 +520,15 @@ pub fn document_save(
 }
 
 #[tauri::command]
-pub fn render_markdown(markdown: String) -> String {
+pub fn render_markdown(markdown: String, note_titles: Vec<String>) -> String {
     // Strip the YAML frontmatter block before rendering — matches the real
     // app's own markdown_preview.rs, which never shows it in Preview/
     // Reading view either (it's metadata for the Metadata panel, not part
     // of the document's prose).
-    smaragd_core::markdown::render_html(smaragd_core::frontmatter::strip(&markdown))
+    smaragd_core::markdown::render_html(
+        smaragd_core::frontmatter::strip(&markdown),
+        &note_titles,
+    )
 }
 
 /// The `[[target]]` of the wikilink spanning `cursor` (a byte offset into

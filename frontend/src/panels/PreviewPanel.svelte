@@ -1,6 +1,7 @@
 <script lang="ts">
   import { project } from "../stores/project.svelte";
   import { previewZoom } from "../stores/previewZoom.svelte";
+  import RenderedMarkdown from "../RenderedMarkdown.svelte";
 </script>
 
 {#if project.selectedPath}
@@ -9,7 +10,7 @@
     style="transform: scale({previewZoom.scale}); transform-origin: top left; width: {100 /
       previewZoom.scale}%;"
   >
-    {@html project.previewHtml}
+    <RenderedMarkdown html={project.previewHtml} />
   </div>
 {:else}
   <p class="empty">Select a document in the Binder.</p>
