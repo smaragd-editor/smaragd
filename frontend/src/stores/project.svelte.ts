@@ -4,6 +4,7 @@ import { showToast } from "./toast.svelte";
 import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
 import { showPrompt, showConfirm } from "./promptDialog.svelte";
 import { resetMetadataSelectionToDocument } from "./metadataSelection.svelte";
+import { vaultStartIfConfigured, vaultStop, vaultUpdateHeld, vaultAfterSave } from "../vault";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -226,6 +227,7 @@ export async function openProject(root: string) {
     sanityCheckIssues.items = project.value.sanity_check_issues;
     await runBackup(root, "open");
     startExternalWatch();
+    await vaultStartIfConfigured(root);
   } catch (err) {
     project.openError = String(err);
   }
@@ -246,6 +248,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
     sanityCheckIssues.items = project.value.sanity_check_issues;
     await runBackup(root, "open");
     startExternalWatch();
+    await vaultStartIfConfigured(root);
   } catch (err) {
     project.openError = String(err);
   }
@@ -254,6 +257,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
 export async function closeProject() {
   const root = project.value?.root;
   stopExternalWatch();
+  await vaultStop();
   await invoke("project_close");
   if (root) await runBackup(root, "close");
   project.value = null;
@@ -386,6 +390,11 @@ export async function openDocument(path: string) {
     return;
   }
   const root = project.value.root;
+  // Releases whatever the *previously* open document was holding (see
+  // vault.ts's own doc comment on why this port, unlike the real app's
+  // multi-tab model, needs an explicit release here) — before the new
+  // document's own text/dirty state is read in.
+  vaultUpdateHeld(root, null, false);
   try {
     const text = await invoke<string>("document_read", { root, path });
     project.documentText = text;
@@ -466,6 +475,9 @@ export function onEditorChange(text: string) {
   project.documentText = text;
   project.saveStatus = "idle";
   project.dirty = true;
+  if (project.value && project.selectedPath) {
+    vaultUpdateHeld(project.value.root, project.selectedPath, true);
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDocument, 800);
   schedulePreview();
@@ -488,6 +500,9 @@ export function applyDocumentMetaEdit(newContents: string) {
   editorRef?.setDocument(newContents);
   project.saveStatus = "idle";
   project.dirty = true;
+  if (project.value && project.selectedPath) {
+    vaultUpdateHeld(project.value.root, project.selectedPath, true);
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDocument, 800);
   schedulePreview();
@@ -624,6 +639,7 @@ export async function saveDocument() {
     }
     project.saveStatus = "saved";
     project.dirty = false;
+    vaultAfterSave(project.value.root, project.selectedPath);
   } catch (err) {
     project.documentError = String(err);
     project.saveStatus = "error";

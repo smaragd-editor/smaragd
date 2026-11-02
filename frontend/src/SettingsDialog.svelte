@@ -2,7 +2,12 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-  import { settingsStore, saveSettingsDebounced, refreshSpellCheckCatalog } from "./stores/settings.svelte";
+  import {
+    settingsStore,
+    saveSettingsDebounced,
+    refreshSpellCheckCatalog,
+    resolveSyncServerPort,
+  } from "./stores/settings.svelte";
   import {
     SHORTCUT_ACTIONS,
     SHORTCUT_CATEGORIES,
@@ -17,12 +22,8 @@
   // Settings dialog matching the real egui app's 9-category structure
   // (app/src/ui/settings_panel.rs) — General, Appearance, Editor,
   // SpellCheck, Templates, Versions, Sync, Pomodoro, Shortcuts, in that
-  // order. Every field here is real (persists through core::settings::
-  // Settings via settings_save) but a couple don't have a functional
-  // consumer in this build yet — Sync is a placeholder for exactly that
-  // reason (no real sync pairing — Phase 6's Sync panel is demo-only),
-  // noted inline rather than silently omitted, same as every other scope
-  // cut in this port. Spell Check now has a real one.
+  // order. Every field here is real and persists through
+  // core::settings::Settings via settings_save.
   let { onClose, initialCategory = null }: { onClose: () => void; initialCategory?: string | null } =
     $props();
 
@@ -125,6 +126,39 @@
   function resetBackupDir() {
     settingsStore.value.backup_dir = null;
     update();
+  }
+
+  // Sync category — Settings > Sync's global half of setup (server,
+  // passphrase, on/off); pairing a project with a vault happens in the
+  // Sync dock tab instead (see SyncPanel.svelte), same split the real
+  // app's own settings_panel.rs documents.
+  let passphraseVisible = $state(false);
+  let passphraseWeakness = $state<string | null>(null);
+
+  async function checkPassphraseWeakness() {
+    passphraseWeakness = (await invoke<string | null>("vault_passphrase_weakness", {
+      passphrase: settingsStore.value.sync_passphrase,
+    })) as string | null;
+  }
+
+  type TestStatus = "idle" | "testing" | { ok: true; message: string } | { ok: false; message: string };
+  let testStatus = $state<TestStatus>("idle");
+
+  async function testSyncConnection() {
+    testStatus = "testing";
+    try {
+      const health = await invoke<{ status: string; version: string }>("vault_test_connection", {
+        server: {
+          host: settingsStore.value.sync_server_host.trim(),
+          port: resolveSyncServerPort(settingsStore.value),
+          use_tls: !settingsStore.value.sync_plain_http,
+          path: settingsStore.value.sync_server_path.trim().replace(/^\/+|\/+$/g, ""),
+        },
+      });
+      testStatus = { ok: true, message: `Connected (server v${health.version}).` };
+    } catch (err) {
+      testStatus = { ok: false, message: String(err) };
+    }
   }
 
   // Roving-tabindex vertical tablist for the category sidebar (Up/Down/
@@ -510,11 +544,109 @@
             {/if}
           </div>
         {:else if active === "Sync"}
-          <p class="note">
-            Sync has no real device pairing in this build yet — the Sync dock panel runs a
-            local demo against an in-memory vault instead (see Phase 6). Server/passphrase
-            settings aren't modeled here until real pairing exists.
-          </p>
+          <label class="row">
+            <input
+              type="checkbox"
+              bind:checked={settingsStore.value.sync_enabled}
+              onchange={update}
+            />
+            Enable sync
+          </label>
+          <span class="hint">
+            Background sync through a self-hosted sync server. A project only syncs once this
+            is on <em>and</em> it's been paired with a vault — do that from the Sync dock panel,
+            not here.
+          </span>
+          <fieldset disabled={!settingsStore.value.sync_enabled}>
+            <label class="row">
+              Server host
+              <input
+                type="text"
+                placeholder="sync.example.com"
+                bind:value={settingsStore.value.sync_server_host}
+                onchange={update}
+              />
+            </label>
+            <label class="row">
+              Server port
+              <input
+                type="number"
+                min="1"
+                max="65535"
+                placeholder={String(resolveSyncServerPort(settingsStore.value))}
+                value={settingsStore.value.sync_server_port || ""}
+                oninput={(e) => {
+                  settingsStore.value.sync_server_port = Number((e.target as HTMLInputElement).value) || 0;
+                  update();
+                }}
+              />
+            </label>
+            <label class="row">
+              Path
+              <input
+                type="text"
+                placeholder="(usually blank)"
+                bind:value={settingsStore.value.sync_server_path}
+                onchange={update}
+              />
+            </label>
+            <label class="row">
+              <input
+                type="checkbox"
+                checked={!settingsStore.value.sync_plain_http}
+                onchange={(e) => {
+                  settingsStore.value.sync_plain_http = !(e.target as HTMLInputElement).checked;
+                  update();
+                }}
+              />
+              Use HTTPS (TLS)
+            </label>
+            {#if settingsStore.value.sync_plain_http}
+              <p class="note">
+                Plain HTTP: this device's token travels unencrypted. Your text stays
+                encrypted, but only use this on a network you trust.
+              </p>
+            {/if}
+            <label class="column">
+              Encryption passphrase
+              <div class="row">
+                <input
+                  type={passphraseVisible ? "text" : "password"}
+                  style="max-width: 20rem;"
+                  bind:value={settingsStore.value.sync_passphrase}
+                  onchange={update}
+                  onblur={checkPassphraseWeakness}
+                />
+                <button type="button" onclick={() => (passphraseVisible = !passphraseVisible)}>
+                  {passphraseVisible ? "Hide" : "Show"}
+                </button>
+              </div>
+              <span class="hint">
+                Identical on every device that syncs. The server never sees it; it cannot be
+                recovered if lost.
+              </span>
+              {#if passphraseWeakness}
+                <p class="note">Weak passphrase: {passphraseWeakness}.</p>
+              {/if}
+            </label>
+            <label class="row">
+              Device name
+              <input
+                type="text"
+                placeholder={`Smaragd on ${navigator.platform}`}
+                bind:value={settingsStore.value.sync_device_name}
+                onchange={update}
+              />
+            </label>
+            <div class="row buttons">
+              <button type="button" onclick={testSyncConnection} disabled={testStatus === "testing"}>
+                {testStatus === "testing" ? "Testing…" : "Test Connection"}
+              </button>
+              {#if typeof testStatus === "object"}
+                <span class={testStatus.ok ? "ok" : "error-text"}>{testStatus.message}</span>
+              {/if}
+            </div>
+          </fieldset>
         {:else if active === "Pomodoro"}
           <label class="row">
             Work session (min)
@@ -811,5 +943,28 @@
     padding: 0.5rem 1rem;
     display: flex;
     justify-content: flex-end;
+  }
+
+  fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  fieldset:disabled {
+    opacity: 0.5;
+  }
+
+  .ok {
+    color: var(--color-success);
+    font-size: 0.85rem;
+  }
+
+  .error-text {
+    color: var(--color-danger);
+    font-size: 0.85rem;
   }
 </style>

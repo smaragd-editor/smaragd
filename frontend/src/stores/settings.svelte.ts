@@ -59,6 +59,13 @@ export type Settings = {
   backup_on_manual_save: boolean;
   backup_keep_count: number;
   backup_dir: string | null;
+  sync_enabled: boolean;
+  sync_server_host: string;
+  sync_server_port: number;
+  sync_plain_http: boolean;
+  sync_server_path: string;
+  sync_passphrase: string;
+  sync_device_name: string;
   pomodoro_work_minutes: number;
   pomodoro_short_break_minutes: number;
   pomodoro_long_break_minutes: number;
@@ -106,6 +113,13 @@ function defaults(): Settings {
     backup_on_manual_save: false,
     backup_keep_count: 0,
     backup_dir: null,
+    sync_enabled: false,
+    sync_server_host: "",
+    sync_server_port: 0,
+    sync_plain_http: false,
+    sync_server_path: "",
+    sync_passphrase: "",
+    sync_device_name: "",
     pomodoro_work_minutes: 0,
     pomodoro_short_break_minutes: 0,
     pomodoro_long_break_minutes: 0,
@@ -120,6 +134,15 @@ function defaults(): Settings {
     spell_check_language: "Off",
     hide_window_button_bar: false,
   };
+}
+
+/** Mirrors `core::settings::Settings::resolve_sync_server_port`'s
+ * blank-means-unset (`0`) convention — shared by SettingsDialog.svelte's
+ * own port field and SyncPanel.svelte's "Create Vault…"/"Test Connection"
+ * calls, so the two never drift on what "unset" resolves to. */
+export function resolveSyncServerPort(settings: Settings): number {
+  if (settings.sync_server_port) return settings.sync_server_port;
+  return settings.sync_plain_http ? 8080 : 443;
 }
 
 export type SpellCheckLanguageEntry = { language: SpellCheckLanguage; label: string; downloaded: boolean };

@@ -4,11 +4,9 @@
 //! `config_file_path`), not the egui app's `smaragd.toml`, so the two apps
 //! can coexist on one machine during the migration without either's save
 //! ever risking corrupting or silently dropping fields from the other's
-//! settings file. Fields this struct doesn't (yet) have a real consumer for
-//! in the Tauri app (sync server config — Phase 6's Sync panel is demo-only)
-//! are left out rather than carried along inert; everything that *is* here
-//! either already has a real effect or is wired alongside this module.
-//! Plugin shortcut overrides are the one exception worth calling out: they
+//! settings file. Everything here either already has a real effect or is
+//! wired alongside this module. Plugin shortcut overrides are the one
+//! exception worth calling out: they
 //! reuse `shortcuts` below rather than needing a field of their own — see
 //! that field's doc comment.
 //!
@@ -162,10 +160,8 @@ impl EditorFont {
 }
 
 /// A string that must never appear in logs or `{:?}` output — the sync
-/// passphrase field's type, kept for shape-compatibility with the real
-/// app's `SecretString` even though `sync_passphrase` itself isn't part of
-/// this struct yet (see the module doc) — ready for whenever Sync grows
-/// real pairing instead of Phase 6's demo mode.
+/// passphrase field's type, shape-compatible with the real app's own
+/// `SecretString`.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SecretString(pub String);
@@ -232,6 +228,38 @@ pub struct Settings {
     pub backup_on_manual_save: bool,
     pub backup_keep_count: u32,
     pub backup_dir: Option<PathBuf>,
+
+    /// Master switch for background sync through a self-hosted sync server
+    /// (see `smaragd_core::sync` and the manual's Sync chapter), set via
+    /// Settings > Sync. A project only syncs when this is on *and* it has
+    /// been paired with a vault (see `core::sync::link::ProjectLink`).
+    pub sync_enabled: bool,
+    /// The sync server's host name (no scheme, no path). Blank means "not
+    /// configured". Used when *creating or joining* a vault; a paired
+    /// project then remembers the server it was paired with.
+    pub sync_server_host: String,
+    /// The sync server's port. `0` means "not yet configured," resolved by
+    /// `resolve_sync_server_port` (443 with TLS, 8080 without) — same
+    /// blank-means-unset convention as `backup_keep_count`.
+    pub sync_server_port: u16,
+    /// Connect over plain HTTP instead of HTTPS. Stored inverted, like
+    /// `git_integration_disabled`, because every `bool` field here defaults
+    /// to `false` and the safe default is TLS *on* — see `sync_use_tls`.
+    pub sync_plain_http: bool,
+    /// Path prefix when the server sits behind a reverse proxy at a
+    /// sub-path (e.g. `smaragd` for `https://example.com/smaragd/`).
+    /// Usually blank.
+    pub sync_server_path: String,
+    /// The end-to-end encryption passphrase, identical on every device that
+    /// syncs. The server never sees it; a key is derived from it in memory
+    /// (Argon2id) and never written to disk. Stored in the clear in
+    /// `smaragd-tauri.toml` like every other setting (there is no OS-keyring
+    /// integration yet), which is kept owner-only (see `save_to_path`'s
+    /// `write_private`). It cannot be recovered if lost.
+    pub sync_passphrase: SecretString,
+    /// How this device shows up in the vault's device list. Blank resolves
+    /// to "Smaragd on <OS>" (`resolve_sync_device_name`).
+    pub sync_device_name: String,
 
     pub pomodoro_work_minutes: u32,
     pub pomodoro_short_break_minutes: u32,
@@ -358,6 +386,66 @@ impl Settings {
             .clone()
             .unwrap_or_else(|| DEFAULT_GIT_COMMIT_MESSAGE_TEMPLATE.to_string())
     }
+
+    pub fn sync_use_tls(&self) -> bool {
+        !self.sync_plain_http
+    }
+
+    /// Resolve `sync_server_port`'s blank-means-unset (`0`) convention.
+    pub fn resolve_sync_server_port(&self) -> u16 {
+        match (self.sync_server_port, self.sync_use_tls()) {
+            (0, true) => 443,
+            (0, false) => 8080,
+            (port, _) => port,
+        }
+    }
+
+    /// Resolve `sync_device_name`'s blank-means-unset convention.
+    pub fn resolve_sync_device_name(&self) -> String {
+        let name = self.sync_device_name.trim();
+        if name.is_empty() {
+            format!("Smaragd on {}", std::env::consts::OS)
+        } else {
+            name.to_string()
+        }
+    }
+
+    /// Why sync can't be used with the current settings, in words for the
+    /// user, or `None` if the server and passphrase are both filled in
+    /// sensibly.
+    pub fn sync_config_problem(&self) -> Option<&'static str> {
+        let host = self.sync_server_host.trim();
+        if host.is_empty() {
+            return Some("Enter the sync server's host name in Settings > Sync.");
+        }
+        if !smaragd_sync_protocol::ticket::ServerAddr::is_plain_host(host) {
+            return Some(
+                "The sync server's host should be just a name like sync.example.com \
+                 (no http://, no path) — use the Path field for a sub-path.",
+            );
+        }
+        if !smaragd_sync_protocol::ticket::ServerAddr::is_plain_path(self.sync_server_path.trim())
+        {
+            return Some(
+                "The sync server's path should be a plain prefix like smaragd \
+                 (letters, digits, -, _ and . only).",
+            );
+        }
+        if self.sync_passphrase.0.is_empty() {
+            return Some("Enter your encryption passphrase in Settings > Sync.");
+        }
+        None
+    }
+
+    pub fn sync_server_addr(&self) -> Option<smaragd_sync_protocol::ticket::ServerAddr> {
+        let host = self.sync_server_host.trim();
+        (!host.is_empty()).then(|| smaragd_sync_protocol::ticket::ServerAddr {
+            host: host.to_string(),
+            port: self.resolve_sync_server_port(),
+            use_tls: self.sync_use_tls(),
+            path: self.sync_server_path.trim().trim_matches('/').to_string(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -375,6 +463,13 @@ mod tests {
         settings.shortcuts.insert("save".into(), KeyCombo::cmd("s"));
         settings.record_recent_project(dir.path().join("project-a"));
         settings.record_recent_project(dir.path().join("project-b"));
+        settings.sync_enabled = true;
+        settings.sync_server_host = "sync.example.com".into();
+        settings.sync_server_port = 8443;
+        settings.sync_plain_http = true;
+        settings.sync_server_path = "smaragd".into();
+        settings.sync_passphrase = SecretString("correct horse battery staple".into());
+        settings.sync_device_name = "Test Device".into();
 
         settings.save_to_path(&store, &path).unwrap();
         let loaded = Settings::load_from_path(&store, &path);
@@ -448,5 +543,62 @@ mod tests {
             DEFAULT_BACKUP_KEEP_COUNT
         );
         assert_eq!(settings.resolve_ui_scale(), DEFAULT_UI_SCALE);
+    }
+
+    #[test]
+    fn resolve_sync_server_port_defaults_by_tls() {
+        let mut settings = Settings::default();
+        assert_eq!(settings.resolve_sync_server_port(), 443);
+        settings.sync_plain_http = true;
+        assert_eq!(settings.resolve_sync_server_port(), 8080);
+        settings.sync_server_port = 9000;
+        assert_eq!(settings.resolve_sync_server_port(), 9000);
+    }
+
+    #[test]
+    fn resolve_sync_device_name_falls_back_to_os_label() {
+        let settings = Settings::default();
+        assert_eq!(
+            settings.resolve_sync_device_name(),
+            format!("Smaragd on {}", std::env::consts::OS)
+        );
+        let named = Settings {
+            sync_device_name: "My Laptop".into(),
+            ..Settings::default()
+        };
+        assert_eq!(named.resolve_sync_device_name(), "My Laptop");
+    }
+
+    #[test]
+    fn sync_config_problems_are_explained_in_order() {
+        let mut settings = Settings::default();
+        assert!(settings.sync_config_problem().unwrap().contains("host name"));
+
+        settings.sync_server_host = "https://sync.example.com/x".into();
+        assert!(settings.sync_config_problem().unwrap().contains("just a name"));
+
+        settings.sync_server_host = "sync.example.com".into();
+        settings.sync_server_path = "/bad path/".into();
+        assert!(settings.sync_config_problem().unwrap().contains("plain prefix"));
+
+        settings.sync_server_path = "smaragd".into();
+        assert!(settings.sync_config_problem().unwrap().contains("passphrase"));
+
+        settings.sync_passphrase = SecretString("a real passphrase".into());
+        assert_eq!(settings.sync_config_problem(), None);
+    }
+
+    #[test]
+    fn sync_server_addr_is_none_until_a_host_is_set() {
+        let mut settings = Settings::default();
+        assert!(settings.sync_server_addr().is_none());
+
+        settings.sync_server_host = " sync.example.com ".into();
+        settings.sync_server_path = "/smaragd/".into();
+        let addr = settings.sync_server_addr().unwrap();
+        assert_eq!(addr.host, "sync.example.com");
+        assert_eq!(addr.path, "smaragd");
+        assert_eq!(addr.port, 443);
+        assert!(addr.use_tls);
     }
 }

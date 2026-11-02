@@ -9,11 +9,11 @@ mod project_settings;
 mod settings;
 mod spellcheck;
 mod story_cards;
-mod sync;
+mod vault;
 
 use collab::CollabState;
 use pomodoro::PomodoroHandle;
-use sync::SyncState;
+use vault::VaultState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,7 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(PomodoroHandle::default())
         .manage(CollabState::default())
-        .manage(SyncState::default())
+        .manage(VaultState::default())
         .invoke_handler(tauri::generate_handler![
             pomodoro::pomodoro_snapshot,
             pomodoro::pomodoro_start,
@@ -100,9 +100,20 @@ pub fn run() {
             collab::collab_join,
             collab::collab_end,
             collab::collab_sync_local_edit,
-            sync::sync_demo_start,
-            sync::sync_demo_stop,
-            sync::sync_demo_now,
+            vault::vault_status,
+            vault::vault_test_connection,
+            vault::vault_create,
+            vault::vault_join,
+            vault::vault_decode_ticket,
+            vault::vault_make_ticket,
+            vault::vault_list_devices,
+            vault::vault_revoke_device,
+            vault::vault_leave,
+            vault::vault_passphrase_weakness,
+            vault::vault_start,
+            vault::vault_stop,
+            vault::vault_sync_now,
+            vault::vault_set_held,
             panels::backlinks_for,
             panels::all_tags,
             panels::documents_with_tag,

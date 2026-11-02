@@ -7,7 +7,7 @@ use smaragd_core::color_theme::{ColorTheme, built_in_themes};
 use smaragd_core::project::store::NativeStore;
 use smaragd_core::settings::Settings;
 
-fn path() -> Result<std::path::PathBuf, String> {
+pub(crate) fn path() -> Result<std::path::PathBuf, String> {
     smaragd_core::settings::config_file_path()
         .ok_or_else(|| "couldn't resolve the platform config directory".to_string())
 }
