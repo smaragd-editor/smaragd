@@ -86,7 +86,7 @@ Version control uses [jj (Jujutsu)](https://github.com/jj-vcs/jj) with the git b
 
 ## Releases
 
-Pushing a semantic-version tag (`v1.2.3` or `1.2.3`, prerelease suffixes like `-rc.1` allowed) triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds:
+Pushing a `v1.x` semantic-version tag (`v1.2.3`, prerelease suffixes like `-rc.1` allowed) triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the stable eframe app:
 
 - **Linux**: an x86_64 release binary and an AppImage (via `linuxdeploy`, using [`packaging/smaragd.desktop`](packaging/smaragd.desktop) and the [app icon](#application-icon)). `libxkbcommon(-x11)`, `libEGL`, and `libGL` are bundled explicitly: winit and glutin load them via `dlopen` rather than linking them, so `linuxdeploy`'s automatic (ldd-based) dependency scan can't see them.
 - **Windows**: an x86_64 build, packaged as a zip.
@@ -94,7 +94,13 @@ Pushing a semantic-version tag (`v1.2.3` or `1.2.3`, prerelease suffixes like `-
 
 All three, plus a `SHA256SUMS` file per platform, are published to a GitHub release. See [RELEASENOTES.md](RELEASENOTES.md) for what's changed release to release.
 
-`just release <version>` (e.g. `just release 0.6.2`) automates cutting one — [`scripts/release.sh`](scripts/release.sh) bumps `Cargo.toml`/`Cargo.lock`, rolls RELEASENOTES.md's Unreleased section into a dated `## vX.Y.Z` header, runs the same checks CI does, then (after a confirmation prompt) commits, pushes `main`, tags, and pushes the tag. Requires a clean jj working copy. `--dry-run` stops right before the push/tag step; `--yes` skips the confirmation prompt.
+`just release <version>` (e.g. `just release 0.6.2`) automates cutting one — [`scripts/release.sh`](scripts/release.sh) bumps `app/Cargo.toml`/`Cargo.lock`, rolls RELEASENOTES.md's Unreleased section into a dated `## vX.Y.Z` header, runs the same checks CI does, then (after a confirmation prompt) commits, pushes `main`, tags, and pushes the tag. Requires a clean jj working copy, and must be run from `main`. `--dry-run` stops right before the push/tag step; `--yes` skips the confirmation prompt.
+
+### Tauri pre-releases (alpha/beta)
+
+The in-progress egui → Tauri migration (`app-tauri/` + `frontend/`, see [ARCHITECTURE.md](ARCHITECTURE.md)) ships as `v2.0.0` once cut over, reached via real tagged `v2.0.0-alpha.*`/`v2.0.0-beta.*` pre-releases rather than a big-bang tag — cut from whatever branch the work currently lives on (e.g. `tauri`), not `main`. Pushing a tag matching `vX.Y.Z-alpha.N`/`vX.Y.Z-beta.N` triggers [`.github/workflows/release-tauri.yml`](.github/workflows/release-tauri.yml), which builds the Tauri app (via the `tauri` CLI) for Linux (`.deb`/`.rpm`/AppImage), Windows (`nsis`), and macOS (universal `.dmg`) and publishes them as a GitHub **pre-release**. `release.yml`'s own tag trigger is narrowed to `v1.x` so it can't also fire on these tags.
+
+`scripts/release-alpha.sh <version>` (e.g. `scripts/release-alpha.sh 2.0.0-alpha.1`) cuts one: bumps `app-tauri/Cargo.toml`/`app-tauri/tauri.conf.json`/`Cargo.lock`, runs the same checks CI does, then (after a confirmation prompt) commits, pushes the current branch, tags, and pushes the tag. Unlike `scripts/release.sh`, it doesn't touch RELEASENOTES.md or `main` — pre-releases currently get no changelog entry beyond GitHub's auto-generated commit list. `workflow_dispatch` (Actions tab or `gh workflow run release-tauri.yml`) builds the same way without a tag, for test runs that publish nothing.
 
 ## Application icon
 
