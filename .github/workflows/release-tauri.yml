@@ -5,13 +5,14 @@ name: Release (Tauri, experimental)
 # frontend/) with the real `tauri` CLI, replacing the old workflow's
 # hand-rolled AppImage/cargo-deb/cargo-generate-rpm pipeline for this one.
 #
-# Deliberately `workflow_dispatch`-only for now, not wired to the `v*` tag
-# pattern release.yml listens for: the plan's own Phase 8 instruction is to
-# keep the old eframe release workflow as the one real users get until one
-# real Tauri release has actually shipped and been smoke-tested end to end
-# (see this workflow's own job comments for what's been verified locally
-# vs. what a real CI run still needs to confirm). Run this by hand from the
-# Actions tab (or `gh workflow run release-tauri.yml`) to test it.
+# The cutover to v2.0.0 ships as real tagged v2.0.0-alpha.*/v2.0.0-beta.*
+# pre-releases (not a big-bang tag), cut from whatever branch the Tauri work
+# currently lives on (e.g. `tauri`) via scripts/release-alpha.sh. Pushing
+# such a tag triggers this workflow's "Create GitHub release" steps below,
+# publishing a pre-release with the built bundles attached — release.yml's
+# own tag pattern was narrowed to v1.* so it can't also fire on these tags.
+# `workflow_dispatch` is kept for manual test runs without a tag; those
+# build and bundle the same way but skip publishing anything.
 #
 # Flatpak is dropped here, not carried over — Tauri's bundler has no Flatpak
 # target, and the plan explicitly drops it rather than hand-rolling one
@@ -27,7 +28,14 @@ name: Release (Tauri, experimental)
 # behaves identically — it's what tauri-action itself calls under the hood.
 
 on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -74,10 +82,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Determine version from tauri.conf.json
+      - name: Determine version
         id: version
         run: |
-          VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # Builds every target tauri.conf.json's bundle.targets lists that
@@ -97,12 +109,26 @@ jobs:
           cp target/release/bundle/rpm/*.rpm dist/ 2>/dev/null || true
           cp target/release/bundle/appimage/*.AppImage dist/ 2>/dev/null || true
 
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS-x86_64-linux
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: smaragd-tauri-${{ steps.version.outputs.version }}-linux
           path: dist/*
           if-no-files-found: error
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Pre-release build of the in-progress egui → Tauri migration (see RELEASENOTES.md). Not feature-complete and not meant for everyday use.
 
   release-windows:
     name: Build (Windows x86_64)
@@ -126,11 +152,15 @@ jobs:
         shell: bash
         run: npm ci
 
-      - name: Determine version from tauri.conf.json
+      - name: Determine version
         id: version
         shell: bash
         run: |
-          VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # Builds the `nsis` target (bundle.targets, applicable on Windows).
@@ -140,12 +170,33 @@ jobs:
         shell: bash
         run: frontend/node_modules/.bin/tauri build
 
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/bundle/nsis/*.exe dist/
+
+      - name: Generate checksums
+        shell: bash
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS-x86_64-windows
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: smaragd-tauri-${{ steps.version.outputs.version }}-windows
-          path: target/release/bundle/nsis/*.exe
+          path: dist/*
           if-no-files-found: error
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Pre-release build of the in-progress egui → Tauri migration (see RELEASENOTES.md). Not feature-complete and not meant for everyday use.
 
   release-macos:
     name: Build (macOS universal)
@@ -170,10 +221,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Determine version from tauri.conf.json
+      - name: Determine version
         id: version
         run: |
-          VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(jq -r .version app-tauri/tauri.conf.json)"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # Builds the `dmg`/`app` targets (bundle.targets, applicable on
@@ -195,3 +250,26 @@ jobs:
             target/universal-apple-darwin/release/bundle/dmg/*.dmg
             target/universal-apple-darwin/release/bundle/macos/*.app
           if-no-files-found: error
+
+      # Only the .dmg goes to the GitHub release: a release asset must be a
+      # single file, and the .dmg already carries the .app inside it (which
+      # is why the upload-artifact step above, unlike this one, can still
+      # hand actions/upload-artifact the raw .app directory directly).
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp target/universal-apple-darwin/release/bundle/dmg/*.dmg dist/
+
+      - name: Generate checksums
+        working-directory: dist
+        run: shasum -a 256 * > SHA256SUMS-universal-macos
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            Pre-release build of the in-progress egui → Tauri migration (see RELEASENOTES.md). Not feature-complete and not meant for everyday use.
