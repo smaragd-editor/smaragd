@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn synced_event_surfaces_too_large_and_over_limit_messages_only_when_present() {
-        let quiet = VaultEventDto::from(SyncEvent::Synced(Box::new(SyncReport::default())));
+        let quiet = VaultEventDto::from(SyncEvent::Synced(Box::default()));
         let VaultEventDto::Synced {
             summary,
             too_large_message,
