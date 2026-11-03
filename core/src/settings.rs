@@ -424,8 +424,7 @@ impl Settings {
                  (no http://, no path) — use the Path field for a sub-path.",
             );
         }
-        if !smaragd_sync_protocol::ticket::ServerAddr::is_plain_path(self.sync_server_path.trim())
-        {
+        if !smaragd_sync_protocol::ticket::ServerAddr::is_plain_path(self.sync_server_path.trim()) {
             return Some(
                 "The sync server's path should be a plain prefix like smaragd \
                  (letters, digits, -, _ and . only).",
@@ -572,17 +571,37 @@ mod tests {
     #[test]
     fn sync_config_problems_are_explained_in_order() {
         let mut settings = Settings::default();
-        assert!(settings.sync_config_problem().unwrap().contains("host name"));
+        assert!(
+            settings
+                .sync_config_problem()
+                .unwrap()
+                .contains("host name")
+        );
 
         settings.sync_server_host = "https://sync.example.com/x".into();
-        assert!(settings.sync_config_problem().unwrap().contains("just a name"));
+        assert!(
+            settings
+                .sync_config_problem()
+                .unwrap()
+                .contains("just a name")
+        );
 
         settings.sync_server_host = "sync.example.com".into();
         settings.sync_server_path = "/bad path/".into();
-        assert!(settings.sync_config_problem().unwrap().contains("plain prefix"));
+        assert!(
+            settings
+                .sync_config_problem()
+                .unwrap()
+                .contains("plain prefix")
+        );
 
         settings.sync_server_path = "smaragd".into();
-        assert!(settings.sync_config_problem().unwrap().contains("passphrase"));
+        assert!(
+            settings
+                .sync_config_problem()
+                .unwrap()
+                .contains("passphrase")
+        );
 
         settings.sync_passphrase = SecretString("a real passphrase".into());
         assert_eq!(settings.sync_config_problem(), None);

@@ -74,7 +74,10 @@ fn data_root() -> Result<PathBuf, String> {
 }
 
 fn settings() -> Result<Settings, String> {
-    Ok(Settings::load_from_path(&NativeStore, &crate::settings::path()?))
+    Ok(Settings::load_from_path(
+        &NativeStore,
+        &crate::settings::path()?,
+    ))
 }
 
 /// A project's resolved pairing: the link to actually use (server/salt/key
@@ -332,7 +335,10 @@ pub fn vault_passphrase_weakness(passphrase: String) -> Option<&'static str> {
 
 fn stop_if_active_for(state: &State<VaultState>, root: &str) {
     let mut guard = state.0.lock().expect("vault state mutex poisoned");
-    if guard.as_ref().is_some_and(|active| active.root == Path::new(root)) {
+    if guard
+        .as_ref()
+        .is_some_and(|active| active.root == Path::new(root))
+    {
         guard.take();
     }
 }
@@ -345,7 +351,10 @@ pub async fn vault_start(
 ) -> Result<(), String> {
     {
         let guard = state.0.lock().expect("vault state mutex poisoned");
-        if guard.as_ref().is_some_and(|active| active.root == Path::new(&root)) {
+        if guard
+            .as_ref()
+            .is_some_and(|active| active.root == Path::new(&root))
+        {
             return Ok(()); // already running for this project
         }
     }
@@ -581,13 +590,20 @@ impl From<SyncEvent> for VaultEventDto {
                     HaltReason::Fatal(_) => "fatal",
                 };
                 let message = halt_message(&reason);
-                VaultEventDto::Halted { reason: tag, message }
+                VaultEventDto::Halted {
+                    reason: tag,
+                    message,
+                }
             }
         }
     }
 }
 
-fn spawn_drain_thread(app: AppHandle, state: Arc<Mutex<Option<ActiveSync>>>, wake_rx: mpsc::Receiver<()>) {
+fn spawn_drain_thread(
+    app: AppHandle,
+    state: Arc<Mutex<Option<ActiveSync>>>,
+    wake_rx: mpsc::Receiver<()>,
+) {
     std::thread::spawn(move || {
         loop {
             let _ = wake_rx.recv_timeout(WAKE_FALLBACK);

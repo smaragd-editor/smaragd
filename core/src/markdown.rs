@@ -197,7 +197,11 @@ fn escape_html(text: &str) -> String {
 /// `![alt](path)` would; anything else becomes an `<a>` carrying the
 /// resolved/broken styling hook the frontend's Preview/Reading-view CSS
 /// keys off of (`data-wikilink`, "wikilink"/"wikilink broken").
-fn expand_html_placeholders(html: &str, wikilinks: &[WikilinkPlaceholder], note_titles: &[String]) -> String {
+fn expand_html_placeholders(
+    html: &str,
+    wikilinks: &[WikilinkPlaceholder],
+    note_titles: &[String],
+) -> String {
     let mut out = String::with_capacity(html.len());
     let mut rest = html;
     loop {
@@ -1285,7 +1289,10 @@ mod tests {
     fn render_html_escapes_wikilink_target_and_alias() {
         let html = render_html(r#"See [[<script>|"quoted" & <b>]]."#, &[]);
         assert!(html.contains("&lt;script&gt;"), "{html}");
-        assert!(html.contains("&quot;quoted&quot; &amp; &lt;b&gt;"), "{html}");
+        assert!(
+            html.contains("&quot;quoted&quot; &amp; &lt;b&gt;"),
+            "{html}"
+        );
         assert!(!html.contains("<script>"), "{html}");
     }
 
