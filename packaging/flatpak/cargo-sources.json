@@ -2,8 +2,8 @@
     {
         "type": "git",
         "url": "https://github.com/smaragd-editor/smaragd-sync",
-        "commit": "2c97863f7b51f87f3bea75bff0822dd3e2b6ed54",
-        "dest": "flatpak-cargo/git/smaragd-sync-2c97863"
+        "commit": "0a098086210aa39cd5540c6465b21590a08e81ee",
+        "dest": "flatpak-cargo/git/smaragd-sync-0a09808"
     },
     {
         "type": "archive",
@@ -8042,7 +8042,7 @@
     {
         "type": "shell",
         "commands": [
-            "cp -r --reflink=auto \"flatpak-cargo/git/smaragd-sync-2c97863/smaragd-sync-protocol\" \"cargo/vendor/smaragd-sync-protocol\""
+            "cp -r --reflink=auto \"flatpak-cargo/git/smaragd-sync-0a09808/smaragd-sync-protocol\" \"cargo/vendor/smaragd-sync-protocol\""
         ]
     },
     {
