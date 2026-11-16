@@ -6,6 +6,10 @@ A project is a folder of `.md` files and subfolders marked with a `.smaragd/proj
 
 See the [User Manual](https://smaragd-editor.github.io/smaragd/manual/) for a full user-facing guide to every feature below.
 
+## Feedback
+
+Tried it, broke it, or wish it did something it doesn't? Leave a note in the [Feedback discussion](https://github.com/smaragd-editor/smaragd/discussions/147), or email smaragd at jantzen dot no. No pressure — even a one-liner helps.
+
 ## Installing
 
 Prebuilt binaries for Linux, Windows, and macOS are on the [Releases page](https://github.com/smaragd-editor/smaragd/releases/latest). They aren't signed with a paid code-signing certificate, so Windows and macOS show a first-run warning — expected, not a broken download. See [Installation](https://smaragd-editor.github.io/smaragd/manual/installation.html) in the user manual for how to get past it on each OS.
