@@ -1,7 +1,0 @@
-# Underscore extern crate alias
-
-extern crate self as _;
-
-==>
-
-SourceFile(ExternCrateDeclaration(extern, crate, self, as, _))

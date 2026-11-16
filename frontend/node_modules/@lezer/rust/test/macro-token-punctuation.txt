@@ -1,7 +1,0 @@
-# At, tilde, and percent tokens
-
-tokens!(@ ~ %);
-
-==>
-
-SourceFile(MacroInvocation(Identifier, ParenthesizedTokens(ArithOp)))
