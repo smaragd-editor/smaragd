@@ -6,7 +6,7 @@ default:
 
 # Run a debug build
 run:
-    cargo run
+    cargo run -p smaragd
 
 # Build a debug binary
 build:
@@ -18,7 +18,7 @@ build-release:
 
 # Install the release binary to ~/.cargo/bin
 install:
-    cargo install --path . --locked
+    cargo install --path app --locked
 
 # Remove build artifacts: cargo's target/, the built manual, and dist/
 clean:
