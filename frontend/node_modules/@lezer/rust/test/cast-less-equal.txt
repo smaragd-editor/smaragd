@@ -1,0 +1,22 @@
+# Less-than-or-equal comparison after a cast
+
+fn at_most(value: u8, limit: u32) -> bool {
+  value as u32 <= limit
+}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList(
+      Parameter(BoundIdentifier, TypeIdentifier),
+      Parameter(BoundIdentifier, TypeIdentifier)),
+    TypeIdentifier,
+    Block(
+      ExpressionStatement(
+        BinaryExpression(
+          TypeCastExpression(Identifier, as, TypeIdentifier),
+          CompareOp,
+          Identifier)))))

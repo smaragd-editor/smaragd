@@ -1,0 +1,55 @@
+# U+000B
+
+constVALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+000C
+
+constVALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+0085
+
+constVALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+200E
+
+const‎VALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+200F
+
+const‏VALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+2028
+
+const VALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))
+
+# U+2029
+
+const VALUE: u8 = 0;
+
+==>
+
+SourceFile(ConstItem(const, BoundIdentifier, TypeIdentifier, Integer))

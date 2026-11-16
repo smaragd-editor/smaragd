@@ -1,0 +1,23 @@
+# Try block
+
+fn value() -> Result<u8, ()> {
+    let value = try { 1 };
+    value
+}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    GenericType(
+      TypeIdentifier,
+      TypeArgList(TypeIdentifier, UnitType)),
+    Block(
+      LetDeclaration(
+        let,
+        BoundIdentifier,
+        TryBlock(try, Block(ExpressionStatement(Integer)))),
+      ExpressionStatement(Identifier))))

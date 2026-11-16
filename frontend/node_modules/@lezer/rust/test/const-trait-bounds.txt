@@ -1,0 +1,61 @@
+
+# Const bounds in generic parameters and where clauses
+
+const fn f<T: [const] A + const B>() where T: ~const C {}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    const,
+    fn,
+    BoundIdentifier,
+    TypeParamList(
+      ConstrainedTypeParameter(
+        TypeIdentifier,
+        TraitBounds(
+          ConstTraitBound(const, TypeIdentifier),
+          ConstTraitBound(const, TypeIdentifier)))),
+    ParamList,
+    WhereClause(
+      where,
+      TypeBoundClause(TypeIdentifier, TraitBounds(ConstTraitBound(const, TypeIdentifier)))),
+    Block))
+
+# Parenthesized const bounds
+
+const fn f<T: ([const] A) + (~const B)>() {}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    const,
+    fn,
+    BoundIdentifier,
+    TypeParamList(
+      ConstrainedTypeParameter(
+        TypeIdentifier,
+        TraitBounds(
+          ParenthesizedTraitBound(ConstTraitBound(const, TypeIdentifier)),
+          ParenthesizedTraitBound(ConstTraitBound(const, TypeIdentifier))))),
+    ParamList,
+    Block))
+
+# Const bounds in impl Trait
+
+fn f(_: impl const A + const B) {}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList(
+      Parameter(
+        _,
+        BoundedType(
+          AbstractType(impl, ConstTraitBound(const, TypeIdentifier)),
+          ConstTraitBound(const, TypeIdentifier)))),
+    Block))

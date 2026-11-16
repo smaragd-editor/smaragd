@@ -1,0 +1,20 @@
+# Unsafe foreign block in Edition 2024
+
+unsafe extern "C" { fn f(); }
+
+==>
+
+SourceFile(
+  ForeignModItem(
+    unsafe,
+    extern,
+    String,
+    DeclarationList(FunctionItem(fn, BoundIdentifier, ParamList))))
+
+# Unsafe extern function remains a function item
+
+unsafe extern "C" fn f() {}
+
+==>
+
+SourceFile(FunctionItem(unsafe, extern, String, fn, BoundIdentifier, ParamList, Block))

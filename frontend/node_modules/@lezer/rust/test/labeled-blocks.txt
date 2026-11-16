@@ -1,0 +1,51 @@
+# Labeled block
+
+fn f() { 'a: {} }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(ExpressionStatement(LabeledBlock(LoopLabel, Block)))))
+
+# Break with a value from a labeled block
+
+fn f() -> u8 { 'a: { break 'a 1; } }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    TypeIdentifier,
+    Block(
+      ExpressionStatement(
+        LabeledBlock(
+          LoopLabel,
+          Block(ExpressionStatement(BreakExpression(break, LoopLabel, Integer))))))))
+
+# Break from nested labeled blocks
+
+fn f() { 'outer: { 'inner: { break 'outer; } } }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(
+      ExpressionStatement(
+        LabeledBlock(
+          LoopLabel,
+          Block(
+            ExpressionStatement(
+              LabeledBlock(
+                LoopLabel,
+                Block(ExpressionStatement(BreakExpression(break, LoopLabel)))))))))))

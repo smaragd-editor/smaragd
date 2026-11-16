@@ -1,0 +1,26 @@
+# Unnamed constant
+
+const _: () = ();
+
+==>
+
+SourceFile(ConstItem(const, _, UnitType, UnitExpression))
+
+# Repeated unnamed constants
+
+const _: u8 = 1; const _: u8 = 2;
+
+==>
+
+SourceFile(
+  ConstItem(const, _, TypeIdentifier, Integer),
+  ConstItem(const, _, TypeIdentifier, Integer))
+
+# Unnamed constant inside a block
+
+fn f() { const _: () = {}; }
+
+==>
+
+SourceFile(
+  FunctionItem(fn, BoundIdentifier, ParamList, Block(ConstItem(const, _, UnitType, Block))))

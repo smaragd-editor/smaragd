@@ -1,0 +1,75 @@
+# qualified super method reference
+
+class C { java.util.function.Supplier<String> m() { return C.super::toString; } }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      MethodDeclaration(
+        GenericType(
+          ScopedTypeName(ScopedTypeName(ScopedTypeName(TypeName, TypeName), TypeName), TypeName),
+          TypeArguments(TypeName)),
+        Definition,
+        FormalParameters,
+        Block(ReturnStatement(return, MethodReference(Identifier, super, Identifier)))))))
+
+# enclosing class super method reference
+
+class C { class Inner { java.util.function.Supplier<String> m() { return C.super::toString; } } }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      ClassDeclaration(
+        class,
+        Definition,
+        ClassBody(
+          MethodDeclaration(
+            GenericType(
+              ScopedTypeName(ScopedTypeName(ScopedTypeName(TypeName, TypeName), TypeName), TypeName),
+              TypeArguments(TypeName)),
+            Definition,
+            FormalParameters,
+            Block(ReturnStatement(return, MethodReference(Identifier, super, Identifier)))))))))
+
+# qualified super method reference with type arguments
+
+class Base { <T> T id() { return null; } }
+class C extends Base { java.util.function.Supplier<String> m() { return C.super::<String>id; } }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      MethodDeclaration(
+        TypeParameters(TypeParameter(Definition)),
+        TypeName,
+        Definition,
+        FormalParameters,
+        Block(ReturnStatement(return, null))))),
+  ClassDeclaration(
+    class,
+    Definition,
+    Superclass(extends, TypeName),
+    ClassBody(
+      MethodDeclaration(
+        GenericType(
+          ScopedTypeName(ScopedTypeName(ScopedTypeName(TypeName, TypeName), TypeName), TypeName),
+          TypeArguments(TypeName)),
+        Definition,
+        FormalParameters,
+        Block(
+          ReturnStatement(
+            return,
+            MethodReference(Identifier, super, TypeArguments(TypeName), Identifier)))))))

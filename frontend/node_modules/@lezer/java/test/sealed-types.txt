@@ -1,0 +1,74 @@
+# sealed class declarations
+
+sealed class Shape permits Circle, Polygon {}
+final class Circle extends Shape {}
+non-sealed class Polygon extends Shape {}
+
+==>
+
+Program(
+  ClassDeclaration(
+    Modifiers(sealed),
+    class,
+    Definition,
+    Permits(permits, InterfaceTypeList(TypeName, TypeName)),
+    ClassBody),
+  ClassDeclaration(
+    Modifiers(final),
+    class,
+    Definition,
+    Superclass(extends, TypeName),
+    ClassBody),
+  ClassDeclaration(
+    Modifiers(non, sealed),
+    class,
+    Definition,
+    Superclass(extends, TypeName),
+    ClassBody))
+
+# sealed interface declarations
+
+sealed interface Shape permits Circle, Polygon {}
+final class Circle implements Shape {}
+non-sealed class Polygon implements Shape {}
+
+==>
+
+Program(
+  InterfaceDeclaration(
+    Modifiers(sealed),
+    interface,
+    Definition,
+    Permits(permits, InterfaceTypeList(TypeName, TypeName)),
+    InterfaceBody),
+  ClassDeclaration(
+    Modifiers(final),
+    class,
+    Definition,
+    SuperInterfaces(implements, InterfaceTypeList(TypeName)),
+    ClassBody),
+  ClassDeclaration(
+    Modifiers(non, sealed),
+    class,
+    Definition,
+    SuperInterfaces(implements, InterfaceTypeList(TypeName)),
+    ClassBody))
+
+# contextual sealed words remain identifiers
+
+class Contextual {
+  int sealed;
+  int non;
+  int permits;
+}
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      FieldDeclaration(PrimitiveType, VariableDeclarator(Definition)),
+      FieldDeclaration(PrimitiveType, VariableDeclarator(Definition)),
+      FieldDeclaration(PrimitiveType, VariableDeclarator(Definition)))))

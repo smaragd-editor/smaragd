@@ -1,0 +1,51 @@
+# record declaration
+
+record Point(int x, int y) {}
+
+==>
+
+Program(
+  RecordDeclaration(
+    record,
+    Definition,
+    RecordHeader(
+      RecordComponent(PrimitiveType, Definition),
+      RecordComponent(PrimitiveType, Definition)),
+    RecordBody))
+
+# generic record with an interface
+
+record Pair<T>(T first, T second) implements Serializable {}
+
+==>
+
+Program(
+  RecordDeclaration(
+    record,
+    Definition,
+    TypeParameters(TypeParameter(Definition)),
+    RecordHeader(
+      RecordComponent(TypeName, Definition),
+      RecordComponent(TypeName, Definition)),
+    SuperInterfaces(implements, InterfaceTypeList(TypeName)),
+    RecordBody))
+
+# record with a variable arity component and compact constructor
+
+record Path(String @A ... parts) {
+  Path {}
+}
+
+==>
+
+Program(
+  RecordDeclaration(
+    record,
+    Definition,
+    RecordHeader(
+      RecordComponent(
+        TypeName,
+        MarkerAnnotation(Identifier),
+        Definition)),
+    RecordBody(
+      CompactConstructorDeclaration(Definition, Block))))

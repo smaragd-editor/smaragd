@@ -1,0 +1,36 @@
+# Named variadic in a foreign function declaration
+
+extern "C" { fn print(format: *const u8, args: ...); }
+
+==>
+
+SourceFile(
+  ForeignModItem(
+    extern,
+    String,
+    DeclarationList(
+      FunctionItem(
+        fn,
+        BoundIdentifier,
+        ParamList(
+          Parameter(BoundIdentifier, PointerType(const, TypeIdentifier)),
+          Parameter(BoundIdentifier))))))
+
+# Named variadic in a bare function pointer
+
+type Callback = unsafe extern "C" fn(*const u8, _: ...);
+
+==>
+
+SourceFile(
+  TypeItem(
+    type,
+    TypeIdentifier,
+    FunctionType(
+      unsafe,
+      extern,
+      String,
+      fn,
+      ParamList(
+        Parameter(PointerType(const, TypeIdentifier)),
+        Parameter(_)))))

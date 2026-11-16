@@ -1,0 +1,16 @@
+# Named and unnamed function pointer parameters
+
+type Named = fn(value: i32);
+type Unnamed = fn(_: i32);
+
+==>
+
+SourceFile(
+  TypeItem(
+    type,
+    TypeIdentifier,
+    FunctionType(fn, ParamList(Parameter(BoundIdentifier, TypeIdentifier)))),
+  TypeItem(
+    type,
+    TypeIdentifier,
+    FunctionType(fn, ParamList(Parameter(_, TypeIdentifier)))))

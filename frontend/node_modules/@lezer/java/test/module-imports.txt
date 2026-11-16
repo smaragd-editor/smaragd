@@ -1,0 +1,22 @@
+# module import declaration
+
+import module java.base;
+
+==>
+
+Program(
+  ImportDeclaration(
+    import,
+    module,
+    ScopedIdentifier(Identifier, Identifier)))
+
+# module remains a contextual identifier
+
+import module.example;
+
+==>
+
+Program(
+  ImportDeclaration(
+    import,
+    ScopedIdentifier(Identifier, Identifier)))

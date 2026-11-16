@@ -1,0 +1,7 @@
+# Question-mark bound after impl Trait
+
+fn f(value: &(impl Error + ?Sized)) {}
+
+==>
+
+SourceFile(FunctionItem(fn,BoundIdentifier,ParamList(Parameter(BoundIdentifier,ReferenceType(TupleType(BoundedType(AbstractType(impl,TypeIdentifier),RemovedTraitBound(TypeIdentifier)))))),Block))

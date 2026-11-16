@@ -1,0 +1,48 @@
+# Async closure
+
+fn f() { let _ = async || {}; }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(LetDeclaration(let, _, ClosureExpression(async, ParamList, Block)))))
+
+# Async move closure
+
+fn f() { let value = 1; let _ = async move || value; }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(
+      LetDeclaration(let, BoundIdentifier, Integer),
+      LetDeclaration(let, _, ClosureExpression(async, move, ParamList, Identifier)))))
+
+# Async closure with typed parameters and return type
+
+fn f() { let _ = async |value: u8| -> u8 { value }; }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(
+      LetDeclaration(
+        let,
+        _,
+        ClosureExpression(
+          async,
+          ParamList(Parameter(BoundIdentifier, TypeIdentifier)),
+          TypeIdentifier,
+          Block(ExpressionStatement(Identifier)))))))

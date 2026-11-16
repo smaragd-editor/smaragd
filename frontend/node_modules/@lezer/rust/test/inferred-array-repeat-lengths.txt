@@ -1,0 +1,17 @@
+# Inferred array repeat length
+
+fn inferred() { let array: [u8; 1] = [0; _]; }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    Block(
+      LetDeclaration(
+        let,
+        BoundIdentifier,
+        ArrayType(TypeIdentifier, Integer),
+        ArrayExpression(Integer, _)))))

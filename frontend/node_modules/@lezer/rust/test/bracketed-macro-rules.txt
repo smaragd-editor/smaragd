@@ -1,0 +1,13 @@
+# Bracketed macro definition
+
+macro_rules! bracketed [
+  () => {};
+];
+
+==>
+
+SourceFile(
+  MacroDefinition(
+    macro_rules,
+    Identifier,
+    MacroRule(ParenthesizedTokens, BracedTokens)))

@@ -1,0 +1,49 @@
+# default interface method
+
+interface I { default void m() {} }
+
+==>
+
+Program(
+  InterfaceDeclaration(
+    interface,
+    Definition,
+    InterfaceBody(MethodDeclaration(Modifiers(default), void, Definition, FormalParameters, Block))))
+
+# synchronized method
+
+class C { synchronized void m() {} }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(MethodDeclaration(Modifiers(synchronized), void, Definition, FormalParameters, Block))))
+
+# default method with another modifier
+
+interface I { public default void m() {} }
+
+==>
+
+Program(
+  InterfaceDeclaration(
+    interface,
+    Definition,
+    InterfaceBody(
+      MethodDeclaration(Modifiers(public, default), void, Definition, FormalParameters, Block))))
+
+# synchronized method with another modifier
+
+class C { public synchronized void m() {} }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      MethodDeclaration(Modifiers(public, synchronized), void, Definition, FormalParameters, Block))))

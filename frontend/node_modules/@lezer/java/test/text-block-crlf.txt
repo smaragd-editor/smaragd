@@ -1,0 +1,19 @@
+# CRLF text block
+
+class C { String value = """
+text
+"""; }
+
+==>
+
+Program(
+  ClassDeclaration(
+    class,
+    Definition,
+    ClassBody(
+      FieldDeclaration(
+        TypeName,
+        VariableDeclarator(
+          Definition,
+          AssignOp,
+          TextBlock)))))

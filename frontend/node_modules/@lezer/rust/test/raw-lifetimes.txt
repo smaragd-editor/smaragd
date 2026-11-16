@@ -1,0 +1,17 @@
+# Raw lifetime using an Edition 2024 keyword
+
+fn borrow<'r#gen>(value: &'r#gen u8) -> &'r#gen u8 { value }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    TypeParamList(Lifetime),
+    ParamList(
+      Parameter(
+        BoundIdentifier,
+        ReferenceType(Lifetime, TypeIdentifier))),
+    ReferenceType(Lifetime, TypeIdentifier),
+    Block(ExpressionStatement(Identifier))))

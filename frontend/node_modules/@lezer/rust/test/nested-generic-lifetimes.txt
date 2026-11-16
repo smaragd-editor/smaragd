@@ -1,0 +1,23 @@
+# Lifetime argument in a deeply nested generic type
+
+type Nested<'a> = A<B<C<D<'a>>>>;
+
+==>
+
+SourceFile(
+  TypeItem(
+    type,
+    TypeIdentifier,
+    TypeParamList(Lifetime),
+    GenericType(
+      TypeIdentifier,
+      TypeArgList(
+        GenericType(
+          TypeIdentifier,
+          TypeArgList(
+            GenericType(
+              TypeIdentifier,
+              TypeArgList(
+                GenericType(
+                  TypeIdentifier,
+                  TypeArgList(Lifetime))))))))))

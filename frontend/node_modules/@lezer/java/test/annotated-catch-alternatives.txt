@@ -1,0 +1,23 @@
+# annotated multi-catch alternative
+
+try {
+  risky();
+} catch (IOException | @TypeUse SQLException exception) {}
+
+==>
+
+Program(
+  TryStatement(
+    try,
+    Block(
+      ExpressionStatement(
+        MethodInvocation(MethodName(Identifier), ArgumentList))),
+    CatchClause(
+      catch,
+      CatchFormalParameter(
+        CatchType(
+          TypeName,
+          MarkerAnnotation(Identifier),
+          TypeName),
+        Definition),
+      Block)))

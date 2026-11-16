@@ -1,0 +1,26 @@
+# Const block in a constant initializer
+
+const VALUE: u8 = const { 1 };
+
+==>
+
+SourceFile(
+  ConstItem(
+    const,
+    BoundIdentifier,
+    TypeIdentifier,
+    ConstBlock(const, Block(ExpressionStatement(Integer)))))
+
+# Const block in a function
+
+fn value() -> u8 { const { 1 } }
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList,
+    TypeIdentifier,
+    Block(ExpressionStatement(ConstBlock(const, Block(ExpressionStatement(Integer)))))))

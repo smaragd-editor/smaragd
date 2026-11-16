@@ -1,0 +1,23 @@
+# Raw borrow expressions
+
+fn f(value: &mut u8) {
+  let shared = &raw const *value;
+  let mutable = &raw mut *value;
+}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    ParamList(Parameter(BoundIdentifier, ReferenceType(mut, TypeIdentifier))),
+    Block(
+      LetDeclaration(
+        let,
+        BoundIdentifier,
+        ReferenceExpression(raw, const, UnaryExpression(DerefOp, Identifier))),
+      LetDeclaration(
+        let,
+        BoundIdentifier,
+        ReferenceExpression(raw, mut, UnaryExpression(DerefOp, Identifier))))))

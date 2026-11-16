@@ -1,0 +1,51 @@
+# switch statement rules
+
+switch (value) {
+  case 0, 1 -> consume();
+  case 2 -> throw new IllegalArgumentException();
+  default -> {}
+}
+
+==>
+
+Program(
+  SwitchStatement(
+    switch,
+    ParenthesizedExpression(Identifier),
+    SwitchBlock(
+      SwitchRule(
+        SwitchLabel(case, IntegerLiteral, IntegerLiteral),
+        ExpressionStatement(
+          MethodInvocation(MethodName(Identifier), ArgumentList))),
+      SwitchRule(
+        SwitchLabel(case, IntegerLiteral),
+        ThrowStatement(
+          throw,
+          ObjectCreationExpression(
+            new,
+            TypeName,
+            ArgumentList))),
+      SwitchRule(
+        SwitchLabel(default),
+        Block))))
+
+# multiple constants in a traditional switch label
+
+switch (value) {
+  case 0, 1:
+    break;
+  default:
+    break;
+}
+
+==>
+
+Program(
+  SwitchStatement(
+    switch,
+    ParenthesizedExpression(Identifier),
+    SwitchBlock(
+      SwitchLabel(case, IntegerLiteral, IntegerLiteral),
+      BreakStatement(break),
+      SwitchLabel(default),
+      BreakStatement(break))))

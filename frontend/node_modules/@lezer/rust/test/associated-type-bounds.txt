@@ -1,0 +1,44 @@
+# Associated type bound
+
+fn f<T: Iterator<Item: Send>>() {}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    TypeParamList(
+      ConstrainedTypeParameter(
+        TypeIdentifier,
+        TraitBounds(
+          GenericType(
+            TypeIdentifier,
+            TypeArgList(
+              TypeBinding(TypeIdentifier, TraitBounds(TypeIdentifier))))))),
+    ParamList,
+    Block))
+
+
+# Generic associated type bound
+
+fn f<T: Trait<Item<u8>: Copy>>() {}
+
+==>
+
+SourceFile(
+  FunctionItem(
+    fn,
+    BoundIdentifier,
+    TypeParamList(
+      ConstrainedTypeParameter(
+        TypeIdentifier,
+        TraitBounds(
+          GenericType(
+            TypeIdentifier,
+            TypeArgList(
+              TypeBinding(
+                GenericType(TypeIdentifier, TypeArgList(TypeIdentifier)),
+                TraitBounds(TypeIdentifier))))))),
+    ParamList,
+    Block))

@@ -1,0 +1,58 @@
+# Literal const parameter defaults
+
+struct S<const N: usize = 1, const B: bool = true, const C: char = 'x'>;
+
+==>
+
+SourceFile(
+  StructItem(
+    struct,
+    TypeIdentifier,
+    TypeParamList(
+      ConstParameter(const, BoundIdentifier, TypeIdentifier, Integer),
+      ConstParameter(const, BoundIdentifier, TypeIdentifier, Boolean),
+      ConstParameter(const, BoundIdentifier, TypeIdentifier, Char))))
+
+# Negative const parameter default
+
+enum E<const N: i32 = -1> { A }
+
+==>
+
+SourceFile(
+  EnumItem(
+    enum,
+    TypeIdentifier,
+    TypeParamList(ConstParameter(const, BoundIdentifier, TypeIdentifier, ArithOp, Integer)),
+    EnumVariantList(EnumVariant(Identifier))))
+
+# Identifier const parameter default
+
+const N: usize = 1; struct S<const M: usize = N>;
+
+==>
+
+SourceFile(
+  ConstItem(const, BoundIdentifier, TypeIdentifier, Integer),
+  StructItem(
+    struct,
+    TypeIdentifier,
+    TypeParamList(ConstParameter(const, BoundIdentifier, TypeIdentifier, Identifier))))
+
+# Block const parameter default
+
+trait T<const N: usize = { 1 + 1 }> {}
+
+==>
+
+SourceFile(
+  TraitItem(
+    trait,
+    TypeIdentifier,
+    TypeParamList(
+      ConstParameter(
+        const,
+        BoundIdentifier,
+        TypeIdentifier,
+        Block(ExpressionStatement(BinaryExpression(Integer, ArithOp, Integer))))),
+    DeclarationList))
