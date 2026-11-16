@@ -1126,6 +1126,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/castaway/castaway-0.2.4.crate",
+        "sha256": "dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a",
+        "dest": "cargo/vendor/castaway-0.2.4"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"dec551ab6e7578819132c713a93c022a05d60159dc86e7a7050223577484c55a\", \"files\": {}}",
+        "dest": "cargo/vendor/castaway-0.2.4",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/cbc/cbc-0.1.2.crate",
         "sha256": "26b52a9543ae338f279b96b0b9fed9c8093744685043739079ce85cd58f289a6",
         "dest": "cargo/vendor/cbc-0.1.2"
@@ -1485,6 +1498,19 @@
         "type": "inline",
         "contents": "{\"package\": \"a3c400139ba1389ef9e20ad2d87cda68b437a66483aa0da616bdf2cea7413853\", \"files\": {}}",
         "dest": "cargo/vendor/comemo-macros-0.5.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/compact_str/compact_str-0.10.0.crate",
+        "sha256": "79fcda08c33bb58b97008b2cdada6622500e949e060f5913361763121abd2416",
+        "dest": "cargo/vendor/compact_str-0.10.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"79fcda08c33bb58b97008b2cdada6622500e949e060f5913361763121abd2416\", \"files\": {}}",
+        "dest": "cargo/vendor/compact_str-0.10.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -7197,27 +7223,27 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/rhai/rhai-1.26.1.crate",
-        "sha256": "0334639972c0ea5a3fd366aa36116754a11431b619fec3ed559b3f73bcbcebf5",
-        "dest": "cargo/vendor/rhai-1.26.1"
+        "url": "https://static.crates.io/crates/rhai/rhai-1.27.0.crate",
+        "sha256": "c3925b784c0bee6542637e425ed7511a63257bf11b7ecf51ffd845e2d24d9163",
+        "dest": "cargo/vendor/rhai-1.27.0"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"0334639972c0ea5a3fd366aa36116754a11431b619fec3ed559b3f73bcbcebf5\", \"files\": {}}",
-        "dest": "cargo/vendor/rhai-1.26.1",
+        "contents": "{\"package\": \"c3925b784c0bee6542637e425ed7511a63257bf11b7ecf51ffd845e2d24d9163\", \"files\": {}}",
+        "dest": "cargo/vendor/rhai-1.27.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/rhai_codegen/rhai_codegen-3.2.0.crate",
-        "sha256": "3cd3a7535e50bf36857e7be7bec276d334e8c2dfa469c2201226fd01638ea5ca",
-        "dest": "cargo/vendor/rhai_codegen-3.2.0"
+        "url": "https://static.crates.io/crates/rhai_codegen/rhai_codegen-3.3.0.crate",
+        "sha256": "3d9661edb4a4b8145b017582d634c5eb88ff1a5284a5aa701f83a28f0657a826",
+        "dest": "cargo/vendor/rhai_codegen-3.3.0"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"3cd3a7535e50bf36857e7be7bec276d334e8c2dfa469c2201226fd01638ea5ca\", \"files\": {}}",
-        "dest": "cargo/vendor/rhai_codegen-3.2.0",
+        "contents": "{\"package\": \"3d9661edb4a4b8145b017582d634c5eb88ff1a5284a5aa701f83a28f0657a826\", \"files\": {}}",
+        "dest": "cargo/vendor/rhai_codegen-3.3.0",
         "dest-filename": ".cargo-checksum.json"
     },
     {
