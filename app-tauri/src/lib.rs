@@ -25,6 +25,7 @@ pub fn run() {
         .manage(PomodoroHandle::default())
         .manage(CollabState::default())
         .manage(VaultState::default())
+        .manage(git_ops::GitActivityState::default())
         .invoke_handler(tauri::generate_handler![
             pomodoro::pomodoro_snapshot,
             pomodoro::pomodoro_start,

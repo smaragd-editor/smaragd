@@ -7,6 +7,7 @@
   import { settingsStore, resolveSyncServerPort } from "../stores/settings.svelte";
   import { requestSettings } from "../stores/settingsRequest.svelte";
   import { showPrompt, showConfirm } from "../stores/promptDialog.svelte";
+  import { humanizeAge } from "../humanizeAge";
 
   // Real multi-device vault sync — replaces Phase 6's demo mode (a
   // SyncRunner against an in-memory fake vault). Backed by
@@ -82,13 +83,6 @@
 
   let now = $state(Date.now());
   let tick: ReturnType<typeof setInterval> | undefined;
-
-  function humanizeAge(seconds: number): string {
-    if (seconds <= 44) return "just now";
-    if (seconds <= 3599) return `${Math.floor((seconds + 30) / 60)} min ago`;
-    if (seconds <= 86399) return `${Math.floor((seconds + 1800) / 3600)} h ago`;
-    return `${Math.floor((seconds + 43200) / 86400)} days ago`;
-  }
 
   const lastSyncedLabel = $derived(
     lastSyncedAt ? humanizeAge(Math.floor((now - lastSyncedAt) / 1000)) : "",

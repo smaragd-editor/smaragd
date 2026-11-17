@@ -7,10 +7,10 @@
 //! All read-mostly, reusing `Project` query methods that already exist and
 //! already recompute fresh from disk on every call (same convention as
 //! Phase 2's `project_binder_tree`) — no new core logic, only IPC DTOs
-//! around what's there. Deliberately lighter than the real egui panels:
-//! Version Activity skips the live "this session's git actions" log (app-
-//! level state not available here) — a later refinement, not required to
-//! prove these panels dock and show real project data. Dashboard's bar
+//! around what's there. Version Activity is the one exception: its live
+//! "this session's git actions" log needs app-level state a stateless
+//! command can't have on its own, so `version_activity` also reads
+//! `git_ops::GitActivityState` — see that type's doc comment. Dashboard's bar
 //! charts (originally egui_plot-specific) are fully ported now too, as
 //! plain inline SVG on the frontend side (DashboardPanel.svelte) — no
 //! charting library pulled in just for six fixed, non-interactive bars.
@@ -26,9 +26,13 @@ use std::path::Path;
 
 use serde::Serialize;
 use smaragd_core::git;
+use smaragd_core::git::GitActivityOutcome;
 use smaragd_core::project::{Project, WordCountScope};
 use smaragd_core::streak;
+use tauri::State;
 use uuid::Uuid;
+
+use crate::git_ops::GitActivityState;
 
 fn load(root: &str) -> Result<Project, String> {
     Project::load_from_folder(Path::new(root)).map_err(|e| e.to_string())
@@ -436,22 +440,54 @@ pub struct CommitDto {
     subject: String,
 }
 
+/// One thing this session itself did (or tried to do) via git — the DTO
+/// counterpart of `core::git::GitActivityEntry`/`GitActivityOutcome`, which
+/// derive neither `Serialize` (an egui-app-only type, never sent over IPC
+/// until now).
+#[derive(Serialize)]
+pub struct GitActivityEntryDto {
+    at_unix: u64,
+    message: String,
+    outcome: &'static str,
+    files: Vec<String>,
+}
+
+fn outcome_tag(outcome: GitActivityOutcome) -> &'static str {
+    match outcome {
+        GitActivityOutcome::Success => "success",
+        GitActivityOutcome::Neutral => "neutral",
+        GitActivityOutcome::Error => "error",
+    }
+}
+
 #[derive(Serialize)]
 pub struct VersionActivityDto {
     git_available: bool,
     dirty_files: Vec<String>,
     commits: Vec<CommitDto>,
+    activity: Vec<GitActivityEntryDto>,
 }
 
 #[tauri::command]
-pub fn version_activity(root: String) -> Result<VersionActivityDto, String> {
-    let project = load(&root)?;
+pub fn version_activity(
+    git_activity: State<GitActivityState>,
+    root: String,
+) -> Result<VersionActivityDto, String> {
+    version_activity_impl(&git_activity, &root)
+}
+
+fn version_activity_impl(
+    git_activity: &GitActivityState,
+    root: &str,
+) -> Result<VersionActivityDto, String> {
+    let project = load(root)?;
     let git_available = project.meta.git_enabled && git::is_repo(&project.root);
     if !git_available {
         return Ok(VersionActivityDto {
             git_available: false,
             dirty_files: Vec::new(),
             commits: Vec::new(),
+            activity: Vec::new(),
         });
     }
     let dirty_files = git::status(&project.root)
@@ -470,10 +506,21 @@ pub fn version_activity(root: String) -> Result<VersionActivityDto, String> {
             subject: c.subject,
         })
         .collect();
+    let activity = git_activity
+        .snapshot()
+        .into_iter()
+        .map(|entry| GitActivityEntryDto {
+            at_unix: entry.at_unix,
+            message: entry.message,
+            outcome: outcome_tag(entry.outcome),
+            files: entry.files,
+        })
+        .collect();
     Ok(VersionActivityDto {
         git_available: true,
         dirty_files,
         commits,
+        activity,
     })
 }
 
@@ -544,9 +591,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         smaragd_core::project::Project::initialize(dir.path()).unwrap();
 
-        let activity = version_activity(dir.path().display().to_string()).unwrap();
+        let activity = version_activity_impl(
+            &GitActivityState::default(),
+            &dir.path().display().to_string(),
+        )
+        .unwrap();
 
         assert!(!activity.git_available);
         assert!(activity.commits.is_empty());
+        assert!(activity.activity.is_empty());
+    }
+
+    #[test]
+    fn version_activity_includes_the_live_session_activity_log_once_git_is_enabled() {
+        if !git::is_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        smaragd_core::project::Project::initialize(dir.path()).unwrap();
+        let git_activity = GitActivityState::default();
+        crate::git_ops::git_enable_impl(&git_activity, &dir.path().display().to_string())
+            .expect("enable");
+
+        let activity =
+            version_activity_impl(&git_activity, &dir.path().display().to_string()).unwrap();
+
+        assert!(activity.git_available);
+        assert_eq!(activity.activity.len(), 1);
+        assert_eq!(activity.activity[0].message, "Git support enabled");
+        assert_eq!(activity.activity[0].outcome, "success");
     }
 }

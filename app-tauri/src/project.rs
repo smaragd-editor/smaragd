@@ -9,6 +9,9 @@ use smaragd_core::project::store::NativeStore;
 use smaragd_core::project::{BinderColorMode, FolderRole, store::native_store};
 use smaragd_core::project_template;
 use smaragd_core::settings::Settings;
+use tauri::State;
+
+use crate::git_ops::GitActivityState;
 
 #[derive(Serialize)]
 #[serde(tag = "kind")]
@@ -371,9 +374,15 @@ pub fn backup_run(root: String, trigger: String) -> BackupOutcome {
 /// held-in-memory `Project` (via `tauri::State`) is a later refinement once the
 /// editor/autosave work (Phase 3) actually needs one.
 #[tauri::command]
-pub fn project_open(root: String) -> Result<ProjectSummary, String> {
+pub fn project_open(
+    git_activity: State<GitActivityState>,
+    root: String,
+) -> Result<ProjectSummary, String> {
     let mut project = Project::load_from_folder(Path::new(&root)).map_err(|e| e.to_string())?;
     ensure_starter_folders(&mut project)?;
+    // A previous project's activity has no bearing on this one — matches
+    // `app::project_lifecycle`'s own `git_activity_log.clear()` on open.
+    git_activity.clear();
     Ok(project_summary(&project))
 }
 
@@ -443,11 +452,12 @@ pub fn project_save_as_template(root: String, name: String) -> Result<String, St
     project_template::save_from_project(&dir, &name, &project).map_err(|e| e.to_string())
 }
 
-/// No held state to release yet (see `project_open`'s doc comment) — kept as a
-/// real command now so the frontend's open/close lifecycle doesn't need to
-/// change shape once one exists.
+/// `GitActivityState` is the one piece of held state this app-close path
+/// needs to release so far — see its own doc comment for why it exists at
+/// all, and `project_open`'s matching clear.
 #[tauri::command]
-pub fn project_close() -> Result<(), String> {
+pub fn project_close(git_activity: State<GitActivityState>) -> Result<(), String> {
+    git_activity.clear();
     Ok(())
 }
 
