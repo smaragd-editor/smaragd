@@ -3,9 +3,15 @@
   import { invoke } from "@tauri-apps/api/core";
   import { project, openDocument } from "../stores/project.svelte";
 
-  // Phase 7: list + delete only — creating a note needs a specific editor
-  // cursor position (`upsert_note`'s line/column), which this phase's
-  // Editor panel doesn't expose yet. Later refinement.
+  // List + delete only, same as the real app's own notes_panel.rs: creating
+  // a note needs a specific editor cursor position, which this panel has no
+  // way to ask for on its own. That's the Add Note at Cursor shortcut's job
+  // (MarkdownEditor.svelte -> NotePromptDialog.svelte -> `note_upsert`) —
+  // this panel only ever lists what already exists and lets you jump to or
+  // delete it. The real app's editor also offers a gutter click as a second
+  // entry point (see its own `paint_gutter`); that's still unported here
+  // (tracked separately, see the `editor-gutter` branch), so the shortcut
+  // is this port's only way in for now.
   type Note = {
     id: string;
     path: string;
@@ -41,7 +47,7 @@
 <div class="panel">
   {#if error}<p class="error">{error}</p>{/if}
   {#if notes.length === 0}
-    <p class="empty">No notes yet.</p>
+    <p class="empty">No notes yet — add one with the editor's Add Note at Cursor shortcut.</p>
   {:else}
     <ul>
       {#each notes as note (note.id)}
