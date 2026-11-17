@@ -251,6 +251,8 @@ frontend/src/
   AboutDialog.svelte       Help > About
   EmptyStateArt.svelte     empty-state illustration
   vault.ts                 the non-reactive half of sync's frontend integration: project open/close/save hooks that start/stop/update the vault runner regardless of whether SyncPanel happens to be mounted
+  collabSync.ts            the non-reactive half of collab's frontend integration: a TS port of core::collab::diff (TextChange + adjustCursor), byte-offset-aware since the Rust side diffs on UTF-8 bytes
+  humanizeAge.ts           relative-age formatting ("3 min ago"), a TS port of ui::sync_panel::humanize_age shared by SyncPanel and VersionActivityPanel
   storyCards.ts            story card data helpers
   panels/                  dockable-tab content, each Svelte counterpart of an app/src/ui/*_panel.rs:
                              BacklinksPanel, BeliefTimelinePanel, BookmarksPanel, CollabPanel, DashboardPanel
@@ -261,10 +263,13 @@ frontend/src/
   stores/                  Svelte 5 rune-based state (*.svelte.ts):
                              project (the central project state since Phase 5 — lifted out of ProjectView.svelte
                              so every dock panel reads/mutates the same state regardless of which dockview group
-                             it's mounted in), plus dockLayoutRegistry, editorViewMode, exportRequest, focusMode,
-                             inlineBacklinks, metadataSelection, noteRequest, previewZoom, promptDialog,
-                             settingsRequest, settings, tagsRequest, templatePickerDialog, theme, toast,
-                             viewport, wordCountRegistry
+                             it's mounted in), plus collab (session lifecycle: host/join/end, the joiner's
+                             ephemeral buffer, the collab://event listener), collabStatus (the minimal shared
+                             status + end-handler indirection collab.svelte.ts and project.svelte.ts both need,
+                             split out to avoid a store import cycle), dockLayoutRegistry, editorViewMode,
+                             exportRequest, focusMode, inlineBacklinks, metadataSelection, noteRequest,
+                             previewZoom, promptDialog, settingsRequest, settings, tagsRequest,
+                             templatePickerDialog, theme, toast, viewport, wordCountRegistry
 ```
 
 ## Sync (self-hosted server)
