@@ -95,3 +95,49 @@ pub fn git_pull(root: String) -> Result<PushPullResult, String> {
             .collect(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_commit_message_preview_errors_when_the_project_is_not_a_git_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+
+        assert!(git_commit_message_preview(dir.path().display().to_string()).is_err());
+    }
+
+    #[test]
+    fn git_enable_inits_a_repo_and_flips_the_project_flag() {
+        if !git::is_available() {
+            return; // nothing to test on a machine without git installed
+        }
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+        assert!(!git::is_repo(dir.path()));
+
+        git_enable(dir.path().display().to_string()).expect("enable");
+
+        assert!(git::is_repo(dir.path()));
+        let project = Project::load_from_folder(dir.path()).unwrap();
+        assert!(project.meta.git_enabled);
+        // Enabling again on an already-initialized repo must not error.
+        git_enable(dir.path().display().to_string()).expect("re-enable");
+    }
+
+    #[test]
+    fn git_commit_message_preview_succeeds_once_the_repo_exists() {
+        if !git::is_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+        git_enable(dir.path().display().to_string()).expect("enable");
+        std::fs::write(dir.path().join("Draft.md"), "hello").unwrap();
+
+        let preview =
+            git_commit_message_preview(dir.path().display().to_string()).expect("preview");
+        assert!(!preview.is_empty());
+    }
+}

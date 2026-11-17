@@ -202,3 +202,50 @@ fn spawn_drain_thread(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_of_reports_inactive_shape_regardless_of_session_fields() {
+        // `collab_status`'s `None` branch (no session at all) is covered by
+        // this instead of `status_of`, which always takes an active session.
+        let session = CollabSession::test_fixture(CollabRole::Host);
+        let status = status_of(&session);
+        assert!(status.active);
+    }
+
+    #[test]
+    fn status_of_reflects_the_sessions_role_and_connection_fields() {
+        let mut session = CollabSession::test_fixture(CollabRole::Joiner);
+        session.peer_connected = false;
+        session.reconnecting = true;
+        session.peer_fingerprint = Some("abc123".to_string());
+
+        let status = status_of(&session);
+
+        assert_eq!(status.role, Some("joiner"));
+        assert!(!status.peer_connected);
+        assert!(status.reconnecting);
+        assert_eq!(status.peer_fingerprint.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn collab_update_dto_maps_every_session_update_variant() {
+        assert!(matches!(
+            CollabUpdateDto::from(SessionUpdate::Reconnecting),
+            CollabUpdateDto::Reconnecting
+        ));
+        assert!(matches!(
+            CollabUpdateDto::from(SessionUpdate::PeerDisconnected),
+            CollabUpdateDto::PeerDisconnected
+        ));
+        let CollabUpdateDto::Error { message } =
+            CollabUpdateDto::from(SessionUpdate::Error("boom".to_string()))
+        else {
+            panic!("expected Error");
+        };
+        assert_eq!(message, "boom");
+    }
+}

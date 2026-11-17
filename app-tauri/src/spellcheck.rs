@@ -50,3 +50,25 @@ pub fn spell_check_misspellings(text: String, language: SpellCheckLanguage) -> V
         .map(|range| [range.start, range.end])
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spell_check_catalog_lists_every_known_language_exactly_once() {
+        let catalog = spell_check_catalog();
+        assert_eq!(catalog.len(), SpellCheckLanguage::ALL.len());
+    }
+
+    #[test]
+    fn spell_check_misspellings_is_always_empty_when_spell_check_is_off() {
+        // `Off` never consults a dictionary, so this is deterministic
+        // regardless of what's downloaded on the machine running the test.
+        let spans = spell_check_misspellings(
+            "this txt has plenty of typos".to_string(),
+            SpellCheckLanguage::Off,
+        );
+        assert!(spans.is_empty());
+    }
+}

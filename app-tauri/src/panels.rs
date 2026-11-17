@@ -476,3 +476,77 @@ pub fn version_activity(root: String) -> Result<VersionActivityDto, String> {
         commits,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn document_metadata_reads_frontmatter_body_word_count_and_inline_tags() {
+        let contents = "---\ntype: Chapter\nstatus: draft\ntags: [a, b]\n---\nHello #inline world";
+
+        let meta = document_metadata(contents.to_string());
+
+        assert_eq!(meta.section_type, Some("Chapter".to_string()));
+        assert_eq!(meta.status, Some("draft".to_string()));
+        assert_eq!(meta.tags, vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(meta.inline_tags, vec!["inline".to_string()]);
+        // count_words is a raw whitespace token count of the body — it
+        // doesn't strip markdown syntax, so "#inline" still counts as one.
+        assert_eq!(meta.word_count, 3);
+    }
+
+    #[test]
+    fn frontmatter_write_back_round_trips_through_document_metadata() {
+        let contents = "Just a body, no frontmatter yet.";
+        let input = DocumentMetaInput {
+            section_type: Some("Scene".to_string()),
+            status: None,
+            pov: Some("Alice".to_string()),
+            word_count_target: Some(500),
+            tags: vec!["draft".to_string()],
+        };
+
+        let updated = frontmatter_write_back(contents.to_string(), input);
+        let meta = document_metadata(updated.clone());
+
+        assert_eq!(meta.section_type, Some("Scene".to_string()));
+        assert_eq!(meta.pov, Some("Alice".to_string()));
+        assert_eq!(meta.word_count_target, Some(500));
+        assert!(updated.contains("Just a body, no frontmatter yet."));
+    }
+
+    #[test]
+    fn word_count_is_zero_for_a_freshly_initialized_project() {
+        let dir = tempfile::tempdir().unwrap();
+        smaragd_core::project::Project::initialize(dir.path()).unwrap();
+
+        let counts = word_count(dir.path().display().to_string()).unwrap();
+
+        assert_eq!(counts.manuscript_only, 0);
+        assert_eq!(counts.everything_except_trash, 0);
+    }
+
+    #[test]
+    fn streak_status_reports_disabled_when_the_project_has_not_opted_in() {
+        let dir = tempfile::tempdir().unwrap();
+        smaragd_core::project::Project::initialize(dir.path()).unwrap();
+
+        let status = streak_status(dir.path().display().to_string()).unwrap();
+
+        assert!(!status.enabled);
+        assert_eq!(status.status, "disabled");
+        assert_eq!(status.actual_this_week, 0);
+    }
+
+    #[test]
+    fn version_activity_reports_git_unavailable_without_git_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        smaragd_core::project::Project::initialize(dir.path()).unwrap();
+
+        let activity = version_activity(dir.path().display().to_string()).unwrap();
+
+        assert!(!activity.git_available);
+        assert!(activity.commits.is_empty());
+    }
+}

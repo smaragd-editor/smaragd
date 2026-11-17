@@ -40,6 +40,24 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --all-targets --all-features
 
+  frontend-test:
+    name: Test (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm test
+        working-directory: frontend
+        run: npm test
+
   flatpak-sources:
     name: Flatpak vendored sources
     runs-on: ubuntu-latest

@@ -344,3 +344,46 @@ pub fn clear_pov_color(root: String, pov: String) -> Result<(), String> {
     let mut project = load(&root)?;
     project.clear_pov_color(&pov).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collect_folder_roles_walks_nested_folders_and_skips_roleless_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::initialize(dir.path()).unwrap();
+        let manuscript = project.create_folder(dir.path(), "Manuscript").unwrap();
+        project
+            .set_folder_role(&manuscript, Some(FolderRole::Manuscript))
+            .unwrap();
+        project.create_folder(dir.path(), "Untagged").unwrap();
+        let nested = project.create_folder(&manuscript, "Act One").unwrap();
+        project
+            .set_folder_role(&nested, Some(FolderRole::Research))
+            .unwrap();
+
+        let mut out = Vec::new();
+        collect_folder_roles(&project, &project.tree.root, &mut out);
+
+        let roles: Vec<(String, FolderRole)> = out
+            .into_iter()
+            .map(|entry| (entry.path, entry.role))
+            .collect();
+        assert_eq!(roles.len(), 2);
+        assert!(roles.contains(&(manuscript.display().to_string(), FolderRole::Manuscript)));
+        assert!(roles.contains(&(nested.display().to_string(), FolderRole::Research)));
+    }
+
+    #[test]
+    fn project_settings_reflects_defaults_on_a_fresh_project() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+
+        let settings = project_settings(dir.path().display().to_string()).unwrap();
+
+        assert!(settings.folder_roles.is_empty());
+        assert!(!settings.git_enabled);
+        assert!(!settings.plugins_enabled);
+    }
+}

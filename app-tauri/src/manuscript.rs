@@ -128,3 +128,88 @@ pub fn import_scrivener(root: String, parent: String, scrivener_dir: String) -> 
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manuscript_folders_is_empty_without_a_manuscript_role_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+
+        let folders = manuscript_folders(dir.path().display().to_string()).unwrap();
+        assert!(folders.is_empty());
+    }
+
+    #[test]
+    fn manuscript_folders_lists_every_folder_with_the_manuscript_role() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut project = Project::initialize(dir.path()).unwrap();
+        let manuscript = project.create_folder(dir.path(), "Manuscript").unwrap();
+        project
+            .set_folder_role(&manuscript, Some(FolderRole::Manuscript))
+            .unwrap();
+
+        let folders = manuscript_folders(dir.path().display().to_string()).unwrap();
+
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].name, "Manuscript");
+    }
+
+    #[test]
+    fn export_manuscript_rejects_an_unknown_format() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+
+        let err = export_manuscript(
+            dir.path().display().to_string(),
+            dir.path().display().to_string(),
+            "txt".to_string(),
+            "Title".to_string(),
+            "Subtitle".to_string(),
+            "Author".to_string(),
+            dir.path().join("out.txt").display().to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("unknown export format"));
+    }
+
+    #[test]
+    fn export_manuscript_rejects_a_folder_outside_the_binder() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+
+        let err = export_manuscript(
+            dir.path().display().to_string(),
+            dir.path().join("Nope").display().to_string(),
+            "docx".to_string(),
+            "Title".to_string(),
+            "Subtitle".to_string(),
+            "Author".to_string(),
+            dir.path().join("out.docx").display().to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("no longer in the binder"));
+    }
+
+    #[test]
+    fn import_file_rejects_an_unknown_format() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+        let source = dir.path().join("source.bin");
+        std::fs::write(&source, b"irrelevant").unwrap();
+
+        let err = import_file(
+            dir.path().display().to_string(),
+            dir.path().display().to_string(),
+            "bin".to_string(),
+            source.display().to_string(),
+        )
+        .unwrap_err();
+
+        assert!(err.contains("unknown import format"));
+    }
+}

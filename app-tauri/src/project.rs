@@ -923,3 +923,141 @@ pub fn set_binder_color_mode(
         tree: build_tree(&project),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn word_count_progress_hex_clamps_and_lerps_red_yellow_green() {
+        assert_eq!(word_count_progress_hex(-1.0), "#c83c3c");
+        assert_eq!(word_count_progress_hex(0.0), "#c83c3c");
+        assert_eq!(word_count_progress_hex(0.5), "#e6b41e");
+        assert_eq!(word_count_progress_hex(1.0), "#3cb44b");
+        assert_eq!(word_count_progress_hex(2.0), "#3cb44b");
+    }
+
+    #[test]
+    fn render_markdown_strips_frontmatter_and_marks_wikilinks_resolved_or_broken() {
+        let markdown = "---\ntype: Chapter\n---\nSee [[Topic]] and [[Nope]].";
+        let html = render_markdown(markdown.to_string(), vec!["Topic".to_string()]);
+
+        assert!(!html.contains("type: Chapter"));
+        assert!(
+            html.contains("<a href=\"#\" class=\"wikilink\" data-wikilink=\"Topic\">Topic</a>")
+        );
+        assert!(
+            html.contains(
+                "<a href=\"#\" class=\"wikilink broken\" data-wikilink=\"Nope\">Nope</a>"
+            )
+        );
+    }
+
+    #[test]
+    fn wikilink_target_at_matches_inside_and_at_the_closing_boundary_only() {
+        let text = "Visit [[Foo]] now";
+        // "Visit " is 6 bytes, "[[Foo]]" spans 6..13.
+        assert_eq!(
+            wikilink_target_at(text.to_string(), 6),
+            Some("Foo".to_string())
+        );
+        assert_eq!(
+            wikilink_target_at(text.to_string(), 12),
+            Some("Foo".to_string())
+        );
+        assert_eq!(
+            wikilink_target_at(text.to_string(), 13),
+            Some("Foo".to_string())
+        );
+        assert_eq!(wikilink_target_at(text.to_string(), 14), None);
+        assert_eq!(wikilink_target_at(text.to_string(), 0), None);
+    }
+
+    #[test]
+    fn fuzzy_rank_strings_reports_the_original_index_not_a_reordered_one() {
+        let candidates = vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "zalpha".to_string(),
+        ];
+        let matches = fuzzy_rank_strings(candidates, "alpha".to_string(), 10, false);
+
+        let indices: Vec<usize> = matches.iter().map(|m| m.index).collect();
+        assert!(indices.contains(&0));
+        assert!(indices.contains(&2));
+        assert!(!indices.contains(&1));
+    }
+
+    #[test]
+    fn fuzzy_rank_strings_respects_the_limit() {
+        let candidates: Vec<String> = (0..10).map(|i| format!("match-{i}")).collect();
+        let matches = fuzzy_rank_strings(candidates, "match".to_string(), 3, false);
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn search_everywhere_text_short_circuits_below_the_minimum_query_length() {
+        // No project root needed: the length check runs before `load()`.
+        let hits = search_everywhere_text("/does/not/exist".to_string(), "ab".to_string()).unwrap();
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn search_everywhere_text_finds_a_match_in_a_real_document() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+        std::fs::write(dir.path().join("Notes.md"), "the quick fox jumps").unwrap();
+
+        let hits =
+            search_everywhere_text(dir.path().display().to_string(), "quick".to_string()).unwrap();
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].line, 1); // 1-based, see `search::line_at`
+        assert!(hits[0].line_text.contains("quick"));
+    }
+
+    #[test]
+    fn document_mtime_reflects_a_real_file_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let doc = dir.path().join("Untitled.md");
+        std::fs::write(&doc, "hello").unwrap();
+
+        let millis =
+            document_mtime(dir.path().display().to_string(), doc.display().to_string()).unwrap();
+        assert!(millis > 0);
+    }
+
+    #[test]
+    fn document_mtime_errors_on_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope.md");
+        assert!(
+            document_mtime(
+                dir.path().display().to_string(),
+                missing.display().to_string()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn binder_create_rename_and_delete_round_trip_through_the_command_layer() {
+        let dir = tempfile::tempdir().unwrap();
+        Project::initialize(dir.path()).unwrap();
+        let root = dir.path().display().to_string();
+
+        let created = binder_create_document(root.clone(), root.clone(), "Draft".to_string())
+            .expect("create");
+        assert!(created.path.ends_with("Draft.md"));
+
+        let renamed = binder_rename(root.clone(), created.path.clone(), "Renamed".to_string())
+            .expect("rename");
+        assert!(renamed.path.ends_with("Renamed.md"));
+
+        // No folder has the Trash role in this fresh project, so this is a
+        // permanent delete, not a move into Trash.
+        let tree = binder_delete(root, renamed.path).expect("delete");
+        let dumped = serde_json::to_string(&tree).unwrap();
+        assert!(!dumped.contains("Renamed"));
+    }
+}
