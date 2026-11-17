@@ -17,6 +17,19 @@
   import { inlineBacklinks, toggleInlineBacklinks } from "../stores/inlineBacklinks.svelte";
   import { dockLayoutRegistry } from "../stores/dockLayoutRegistry.svelte";
   import { showToast } from "../stores/toast.svelte";
+  import { collabStatus } from "../stores/collabStatus.svelte";
+  import { collabJoiner, onCollabJoinerChange } from "../stores/collab.svelte";
+
+  // A joiner has no open document of its own to collaborate through (see
+  // stores/collab.svelte.ts's module doc comment), so for as long as a
+  // joined session lasts, this panel shows and edits the ephemeral
+  // collab buffer instead of `project.documentText` — the Tauri-port
+  // equivalent of the real app's dedicated path-less collab tab, minus
+  // the tab itself (this port has no multi-document tab model to give it
+  // one). A host collaborates on whatever's already open, so hosting
+  // needs no such override: `project.documentText` already *is* the
+  // shared buffer (see onEditorChange's own collab-sync hook).
+  const isJoining = $derived(collabStatus.active && collabStatus.role === "joiner");
 
   // The real app's Editor pane has a ☰ menu in its top-right corner
   // (app/src/app/dock_tab_viewer.rs) — every item here reuses an existing
@@ -91,8 +104,13 @@
   });
 </script>
 
-{#if project.selectedPath}
+{#if project.selectedPath || isJoining}
   <div class="panel">
+    {#if isJoining}
+      <div class="toolbar">
+        <span class="collab-label">Collaborating (joined session)</span>
+      </div>
+    {:else}
     <div class="toolbar">
       <button class="hamburger" onclick={() => (showMenu = !showMenu)}>☰</button>
       {#if showMenu}
@@ -164,8 +182,11 @@
         </div>
       {/if}
     </div>
+    {/if}
     <div class="main">
-      {#if editorViewMode.mode === "reading"}
+      {#if isJoining}
+        <MarkdownEditor bind:this={editor} value={collabJoiner.text} onChange={onCollabJoinerChange} />
+      {:else if editorViewMode.mode === "reading"}
         <div class="reading"><RenderedMarkdown html={project.previewHtml} /></div>
       {:else}
         <MarkdownEditor bind:this={editor} value={project.documentText} onChange={onEditorChange} />
@@ -199,6 +220,12 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  .collab-label {
+    font-size: 0.8rem;
+    color: var(--color-fg-muted);
+    padding: 0.2rem 0.4rem;
   }
 
   .toolbar {

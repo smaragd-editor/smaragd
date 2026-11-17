@@ -272,6 +272,25 @@
     });
   }
 
+  /** [`setDocument`], for a remote collab edit rather than switching to a
+   * different file: the whole buffer is still replaced wholesale (matching
+   * the real app's own `poll_collab_events`, which does the same to its
+   * egui buffer rather than a surgical patch), but the selection moves to
+   * `cursorUtf16` in the *new* text afterward instead of letting CodeMirror
+   * map the old selection through the replacement — a same-text no-op
+   * here doesn't skip the dispatch the way `setDocument`'s does, since even
+   * a text-identical remote update can still carry a real cursor move. */
+  export function applyRemoteText(text: string, cursorUtf16: number | undefined) {
+    if (!view) return;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      selection:
+        cursorUtf16 === undefined
+          ? undefined
+          : EditorSelection.cursor(Math.min(cursorUtf16, text.length)),
+    });
+  }
+
   // Deliberately not bound through CodeMirror's own searchKeymap (Ctrl+F/
   // Ctrl+H) — Find and Replace is dispatched through this app's own
   // shortcuts.ts/MenuBar instead, one consistent place every action goes

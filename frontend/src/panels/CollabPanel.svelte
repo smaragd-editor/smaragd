@@ -1,83 +1,28 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
+  import { onDestroy, onMount } from "svelte";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+  import { collabStatus } from "../stores/collabStatus.svelte";
+  import {
+    collabJoiner,
+    endCollabSession,
+    initCollabListener,
+    setCollabError,
+    startCollabHost,
+    startCollabJoin,
+  } from "../stores/collab.svelte";
 
-  // Phase 6: real push-event collab, not a per-frame poll — see
-  // app-tauri/src/collab.rs for the wake-driven drain-thread architecture.
-  // Deliberately a standalone shared textarea, not wired into the Editor
-  // panel's CodeMirror buffer: two-way sync between CodeMirror's own change
-  // stream and remote collab updates (without each fighting the other) is a
-  // real design problem on its own, left for later once this phase's actual
-  // target — proving the push-event architecture — is settled.
-  type CollabUpdate =
-    | { kind: "HostReady"; code: string }
-    | { kind: "TextChanged"; new_text: string }
-    | { kind: "PeerConnected"; fingerprint: string }
-    | { kind: "Reconnecting" }
-    | { kind: "PeerDisconnected" }
-    | { kind: "Error"; message: string };
-
-  type CollabStatus = {
-    active: boolean;
-    role: "host" | "joiner" | null;
-    code: string | null;
-    peer_connected: boolean;
-    reconnecting: boolean;
-    peer_fingerprint: string | null;
-    session_ended: boolean;
-  };
-
-  let status = $state<CollabStatus>({
-    active: false,
-    role: null,
-    code: null,
-    peer_connected: false,
-    reconnecting: false,
-    peer_fingerprint: null,
-    session_ended: false,
-  });
+  // Real push-event collab (app-tauri/src/collab.rs's wake-driven drain-
+  // thread architecture), wired directly into the Editor panel's own
+  // CodeMirror buffer — see stores/collab.svelte.ts's module doc comment
+  // for exactly how hosting vs. joining differ. This panel now only owns
+  // the host/join/status UI; the shared text itself lives and is edited
+  // in the Editor panel for the duration of a session.
   let joinCode = $state("");
-  let sharedText = $state("");
-  let error = $state<string | null>(null);
-
-  async function refreshStatus() {
-    status = await invoke<CollabStatus>("collab_status");
-  }
 
   let unlisten: (() => void) | undefined;
 
   onMount(async () => {
-    await refreshStatus();
-    unlisten = await listen<CollabUpdate>("collab://event", (event) => {
-      const update = event.payload;
-      switch (update.kind) {
-        case "HostReady":
-          status = { ...status, code: update.code };
-          break;
-        case "TextChanged":
-          sharedText = update.new_text;
-          break;
-        case "PeerConnected":
-          status = {
-            ...status,
-            peer_connected: true,
-            reconnecting: false,
-            peer_fingerprint: update.fingerprint,
-          };
-          break;
-        case "Reconnecting":
-          status = { ...status, peer_connected: false, reconnecting: true };
-          break;
-        case "PeerDisconnected":
-          status = { ...status, peer_connected: false, reconnecting: false, session_ended: true };
-          break;
-        case "Error":
-          error = update.message;
-          break;
-      }
-    });
+    unlisten = await initCollabListener();
   });
 
   onDestroy(() => {
@@ -85,37 +30,15 @@
   });
 
   async function host() {
-    error = null;
-    try {
-      await invoke("collab_host");
-      status = { ...status, active: true, role: "host" };
-    } catch (err) {
-      error = String(err);
-    }
+    setCollabError(await startCollabHost());
   }
 
   async function join() {
-    error = null;
-    try {
-      await invoke("collab_join", { code: joinCode });
-      status = { ...status, active: true, role: "joiner" };
-    } catch (err) {
-      error = String(err);
-    }
+    setCollabError(await startCollabJoin(joinCode));
   }
 
   async function end() {
-    await invoke("collab_end");
-    status = {
-      active: false,
-      role: null,
-      code: null,
-      peer_connected: false,
-      reconnecting: false,
-      peer_fingerprint: null,
-      session_ended: false,
-    };
-    sharedText = "";
+    await endCollabSession();
   }
 
   // Phase 7: arboard -> @tauri-apps/plugin-clipboard-manager. The host code
@@ -123,25 +46,18 @@
   // hand would be the whole UX friction point of this flow.
   let copied = $state(false);
   async function copyCode() {
-    if (!status.code) return;
-    await writeText(status.code);
+    if (!collabStatus.code) return;
+    await writeText(collabStatus.code);
     copied = true;
     setTimeout(() => (copied = false), 1500);
-  }
-
-  let editTimer: ReturnType<typeof setTimeout> | undefined;
-  function onEdit() {
-    clearTimeout(editTimer);
-    editTimer = setTimeout(() => {
-      invoke("collab_sync_local_edit", { text: sharedText });
-    }, 300);
   }
 </script>
 
 <div class="collab">
-  {#if !status.active}
+  {#if !collabStatus.active}
     <div class="start">
       <button onclick={host}>Host a session</button>
+      <p class="hint">Edits sync in the Editor panel — open a document first.</p>
       <div class="join">
         <input type="text" placeholder="Paste a connection code" bind:value={joinCode} />
         <button onclick={join} disabled={!joinCode}>Join</button>
@@ -149,25 +65,33 @@
     </div>
   {:else}
     <div class="status-bar">
-      <span>Role: {status.role}</span>
-      {#if status.code}
-        <span>Code: <code>{status.code}</code></span>
+      <span>Role: {collabStatus.role}</span>
+      {#if collabStatus.code}
+        <span>Code: <code>{collabStatus.code}</code></span>
         <button onclick={copyCode}>{copied ? "Copied" : "Copy"}</button>
       {/if}
-      {#if status.peer_connected}
-        <span class="ok">Peer connected{status.peer_fingerprint ? ` (${status.peer_fingerprint})` : ""}</span>
-      {:else if status.reconnecting}
+      {#if collabStatus.peer_connected}
+        <span class="ok"
+          >Peer connected{collabStatus.peer_fingerprint
+            ? ` (${collabStatus.peer_fingerprint})`
+            : ""}</span
+        >
+      {:else if collabStatus.reconnecting}
         <span class="warn">Reconnecting…</span>
-      {:else if status.session_ended}
+      {:else if collabStatus.session_ended}
         <span class="warn">Session ended</span>
       {:else}
         <span>Waiting for peer…</span>
       {/if}
       <button onclick={end}>End session</button>
     </div>
-    <textarea bind:value={sharedText} oninput={onEdit} placeholder="Shared text — edits sync to your peer"></textarea>
+    <p class="hint">
+      {collabStatus.role === "host"
+        ? "Shared in the Editor panel — your edits sync to your peer."
+        : "Shared in the Editor panel — editing it syncs to your peer."}
+    </p>
   {/if}
-  {#if error}<p class="error">{error}</p>{/if}
+  {#if collabJoiner.error}<p class="error">{collabJoiner.error}</p>{/if}
 </div>
 
 <style>
@@ -200,18 +124,18 @@
     font-size: 0.85rem;
   }
 
+  .hint {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--color-fg-muted);
+  }
+
   .ok {
     color: var(--color-success);
   }
 
   .warn {
     color: var(--color-warning);
-  }
-
-  textarea {
-    flex: 1;
-    font-family: inherit;
-    padding: 0.5rem;
   }
 
   .error {

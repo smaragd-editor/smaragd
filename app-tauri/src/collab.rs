@@ -44,14 +44,17 @@ enum CollabUpdateDto {
     HostReady {
         code: String,
     },
-    /// The frontend replaces its whole buffer with `new_text` rather than
-    /// applying `SessionUpdate::TextChanged`'s minimal `diff::TextChange` —
-    /// CodeMirror re-renders the diff itself, and wiring collab directly
-    /// into the live editor's own change stream (rather than swapping the
-    /// whole buffer on every remote update) is a later refinement once an
-    /// editor-integrated collab panel exists.
+    /// The frontend still replaces its whole buffer with `new_text` on every
+    /// remote update — same as the real egui app's own `poll_collab_events`
+    /// (`*self.editor.buffer_mut() = new_text`), not a surgical CodeMirror
+    /// patch — but `change` lets it adjust the local cursor afterward via
+    /// the same `collab::diff::adjust_cursor` math (ported to TS), so typing
+    /// while a remote edit lands doesn't leave the cursor in the wrong
+    /// place. `change` has no `Serialize` impl in `core` (an egui-app-only
+    /// type, never sent over IPC until now), hence the DTO wrapper.
     TextChanged {
         new_text: String,
+        change: TextChangeDto,
     },
     PeerConnected {
         fingerprint: String,
@@ -63,12 +66,24 @@ enum CollabUpdateDto {
     },
 }
 
+#[derive(Serialize, Clone)]
+struct TextChangeDto {
+    pos: usize,
+    deleted_len: usize,
+    inserted: String,
+}
+
 impl From<SessionUpdate> for CollabUpdateDto {
     fn from(update: SessionUpdate) -> Self {
         match update {
-            SessionUpdate::TextChanged { new_text, .. } => {
-                CollabUpdateDto::TextChanged { new_text }
-            }
+            SessionUpdate::TextChanged { new_text, change } => CollabUpdateDto::TextChanged {
+                new_text,
+                change: TextChangeDto {
+                    pos: change.pos,
+                    deleted_len: change.deleted_len,
+                    inserted: change.inserted,
+                },
+            },
             SessionUpdate::PeerConnected { fingerprint } => {
                 CollabUpdateDto::PeerConnected { fingerprint }
             }

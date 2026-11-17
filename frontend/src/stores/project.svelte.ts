@@ -5,6 +5,8 @@ import { settingsStore, saveSettingsDebounced } from "./settings.svelte";
 import { showPrompt, showConfirm } from "./promptDialog.svelte";
 import { resetMetadataSelectionToDocument } from "./metadataSelection.svelte";
 import { vaultStartIfConfigured, vaultStop, vaultUpdateHeld, vaultAfterSave } from "../vault";
+import { collabStatus, requestCollabSessionEnd } from "./collabStatus.svelte";
+import { adjustCursor, byteOffsetToUtf16, type TextChange } from "../collabSync";
 
 // Phase 5: lifted out of ProjectView.svelte so every dock panel (Binder,
 // Editor, Preview, Corkboard, Story Grid) can read/mutate the same project
@@ -104,6 +106,8 @@ let editorRef:
       gotoLine: (line: number) => void;
       setMisspellings: (ranges: { from: number; to: number }[]) => void;
       focus: () => void;
+      getCursor: () => { line: number; byteColumn: number; byteOffset: number } | undefined;
+      applyRemoteText: (text: string, cursorUtf16: number | undefined) => void;
     }
   | undefined;
 
@@ -255,6 +259,7 @@ export async function createProjectFromTemplate(root: string, templateId: string
 }
 
 export async function closeProject() {
+  requestCollabSessionEnd("Collaboration session ended: project closed");
   const root = project.value?.root;
   stopExternalWatch();
   await vaultStop();
@@ -379,6 +384,9 @@ export async function resolveExternalConflict(discardLocal: boolean) {
 }
 
 export async function openDocument(path: string) {
+  if (collabStatus.active && collabStatus.role === "host" && project.selectedPath !== path) {
+    requestCollabSessionEnd("Collaboration session ended: switched documents");
+  }
   flushPendingSave();
   project.documentError = null;
   project.saveStatus = "idle";
@@ -473,6 +481,58 @@ export async function goForwardDocument() {
 
 export function onEditorChange(text: string) {
   project.documentText = text;
+  project.saveStatus = "idle";
+  project.dirty = true;
+  if (project.value && project.selectedPath) {
+    vaultUpdateHeld(project.value.root, project.selectedPath, true);
+  }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDocument, 800);
+  schedulePreview();
+  scheduleSpellCheck();
+  // Hosting a collab session collaborates on whatever's actually open —
+  // same document, same buffer — so a local edit both autosaves normally
+  // *and* ships to the peer, independently of each other (matches the real
+  // app's `sync_local_collab_edit`, which runs every frame regardless of
+  // whether a save is also pending).
+  if (collabStatus.active && collabStatus.role === "host") {
+    scheduleCollabSync(text);
+  }
+}
+
+let collabSyncTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleCollabSync(text: string) {
+  clearTimeout(collabSyncTimer);
+  collabSyncTimer = setTimeout(() => {
+    void invoke("collab_sync_local_edit", { text });
+  }, 300);
+}
+
+/** Pushes a remote collab text change into the live CodeMirror view alone —
+ * no document-model side effects (no save, no dirty flag) — adjusting the
+ * local cursor via the same `collab::diff::adjust_cursor` math the real
+ * app's `poll_collab_events` uses, ported to TS in `collabSync.ts`. Shared
+ * by `applyRemoteCollabEdit` below (the *host* case, which layers document
+ * bookkeeping on top) and `stores/collab.svelte.ts`'s *joiner* case (which
+ * has no open document to layer that onto at all). */
+export function applyRemoteTextToEditor(newText: string, change: TextChange) {
+  const cursorByte = editorRef?.getCursor()?.byteOffset;
+  const cursorUtf16 =
+    cursorByte === undefined
+      ? undefined
+      : byteOffsetToUtf16(newText, adjustCursor(cursorByte, change));
+  editorRef?.applyRemoteText(newText, cursorUtf16);
+}
+
+/** Merges a remote collab edit into the real open document — the *host*
+ * side of collaboration (the document being collaborated on is whatever's
+ * actually open), so this goes through the same autosave/preview/spell-
+ * check pipeline a local edit does, same shape as `applyDocumentMetaEdit`,
+ * just sourced from the peer instead of CodeMirror's own keystroke stream. */
+export function applyRemoteCollabEdit(newText: string, change: TextChange) {
+  applyRemoteTextToEditor(newText, change);
+  project.documentText = newText;
   project.saveStatus = "idle";
   project.dirty = true;
   if (project.value && project.selectedPath) {
@@ -686,6 +746,7 @@ export function onTreeChange(tree: BinderNodeDto) {
 }
 
 export function closeDocument() {
+  requestCollabSessionEnd("Collaboration session ended: document closed");
   flushPendingSave();
   project.selectedPath = null;
   project.documentText = "";
