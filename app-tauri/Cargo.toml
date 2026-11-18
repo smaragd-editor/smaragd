@@ -1,6 +1,6 @@
 [package]
 name = "smaragd-tauri"
-version = "2.0.0-alpha.1"
+version = "2.0.0-alpha.2"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Smaragd — a novel-writing and manuscript editor (Tauri desktop + mobile shell, in progress; the egui-based io.github.ljantzen.smaragd release remains current and stable)"
