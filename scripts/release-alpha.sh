@@ -8,6 +8,15 @@
 # run from whatever branch the Tauri work currently lives on (e.g. `tauri`)
 # and does not touch RELEASENOTES.md or the main bookmark.
 #
+# app-tauri/Cargo.toml and the git tag get the real semver version
+# (X.Y.Z-alpha.N); app-tauri/tauri.conf.json gets that same version with
+# the "-" swapped for "+" (X.Y.Z+alpha.N) instead. Tauri's own bundlers
+# read tauri.conf.json's version, and the AppImage one rejects "-" outright
+# ("contains invalid character") — confirmed in CI on the v2.0.0-alpha.1
+# release attempt, where deb/rpm built fine but appimage didn't. "+" is
+# still valid semver (build metadata rather than a prerelease tag) and
+# passes the bundler's allowed-character check.
+#
 # Usage: scripts/release-alpha.sh <version> [--yes] [--dry-run] [--bookmark <name>]
 #   <version>        New version, e.g. 2.0.0-alpha.1 or 2.0.0-beta.3 (no leading "v")
 #   --yes, -y        Skip the confirmation prompt before pushing/tagging
@@ -136,7 +145,8 @@ if [ -n "$remote_tag" ]; then
     exit 1
 fi
 
-echo "Bumping app-tauri $current_version -> $version"
+bundler_version="${version/-/+}"
+echo "Bumping app-tauri $current_version -> $version (tauri.conf.json: $bundler_version)"
 
 # From here on, files get edited on disk before anything is described — in
 # jj that lands directly in the current (still-anonymous) working-copy
@@ -156,7 +166,7 @@ trap on_error ERR
 
 sed -i "s/^version = \"$current_version\"/version = \"$version\"/" app-tauri/Cargo.toml
 tmp="$(mktemp)"
-jq --arg v "$version" '.version = $v' app-tauri/tauri.conf.json >"$tmp"
+jq --arg v "$bundler_version" '.version = $v' app-tauri/tauri.conf.json >"$tmp"
 mv "$tmp" app-tauri/tauri.conf.json
 files_touched=1
 

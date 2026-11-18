@@ -94,11 +94,16 @@ jobs:
 
       # Builds every target tauri.conf.json's bundle.targets lists that
       # apply on Linux (deb, rpm, appimage) — `dmg`/`nsis`/`app` are silently
-      # skipped as not applicable to this OS. Verified locally: both rpm and
-      # appimage produce real, launchable bundles (rpm installs and runs its
-      # extracted binary; the appimage carries the correct type-2 magic
-      # bytes and runs `--appimage-version`). `.deb` specifically still
-      # needs a real CI run to confirm — this sandbox has no `dpkg-deb`.
+      # skipped as not applicable to this OS. Verified locally (without a
+      # prerelease suffix): both rpm and appimage produce real, launchable
+      # bundles (rpm installs and runs its extracted binary; the appimage
+      # carries the correct type-2 magic bytes and runs
+      # `--appimage-version`). Confirmed in real CI on the v2.0.0-alpha.1
+      # run: deb and rpm tolerate a hyphenated tauri.conf.json version, but
+      # appimage's bundler rejects "-" outright ("contains invalid
+      # character") — see scripts/release-alpha.sh's comment on why it
+      # writes tauri.conf.json's version with "+" instead of "-" for
+      # exactly this reason.
       - name: Build and bundle
         run: frontend/node_modules/.bin/tauri build
 
