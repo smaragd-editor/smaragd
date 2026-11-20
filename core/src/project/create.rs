@@ -1,0 +1,116 @@
+use super::*;
+
+impl Project {
+    /// Create a new empty markdown document under `parent` (a folder within this
+    /// project), record it at the end of that folder's manual order, and rescan.
+    pub fn create_document(&mut self, parent: &Path, filename: &str) -> io::Result<PathBuf> {
+        self.write_new_document(parent, filename, "")
+    }
+
+    /// Create a new markdown document under `parent` whose initial content is
+    /// `template_path`'s (frontmatter included) with every `${{...}}` placeholder
+    /// substituted (see `crate::templates::substitute`) — Scrivener-style "New
+    /// From Template". `template_path` itself is left untouched. `date_format`/
+    /// `time_format` are `Settings::template_date_format`/`template_time_format`,
+    /// threaded through rather than read directly since `Project` has no access to
+    /// app-wide `Settings`; `${{previous_day}}`/`${{next_day}}` also fall back to
+    /// `date_format` here, since a plain template has no daily-note-specific
+    /// filename format of its own to use instead (contrast
+    /// `open_or_create_daily_note`, which does). Goes through the same
+    /// name-validation and collision-refusal path as `create_document`. Returns the
+    /// new document's path, plus the byte offset of a `${{cursor}}` placeholder in
+    /// its content, if any — see `templates::substitute`.
+    pub fn create_document_from_template(
+        &mut self,
+        parent: &Path,
+        filename: &str,
+        template_path: &Path,
+        date_format: &str,
+        time_format: &str,
+    ) -> io::Result<(PathBuf, Option<usize>)> {
+        self.create_document_from_template_with_formats(
+            parent,
+            filename,
+            template_path,
+            &crate::templates::TemplateFormats {
+                date: date_format,
+                time: time_format,
+                adjacent_day: date_format,
+            },
+        )
+    }
+
+    /// [`Project::create_document_from_template`], against an explicit
+    /// `TemplateFormats` rather than always falling `${{previous_day}}`/
+    /// `${{next_day}}` back to `date_format` — what `open_or_create_daily_note`
+    /// uses to give those two its own daily-note filename format instead.
+    pub(crate) fn create_document_from_template_with_formats(
+        &mut self,
+        parent: &Path,
+        filename: &str,
+        template_path: &Path,
+        formats: &crate::templates::TemplateFormats,
+    ) -> io::Result<(PathBuf, Option<usize>)> {
+        let contents = self.store.read_to_string(template_path)?;
+        let name = filename.strip_suffix(".md").unwrap_or(filename);
+        let (contents, cursor) = crate::templates::substitute(&contents, name, formats);
+        self.write_new_document(parent, filename, &contents)
+            .map(|path| (path, cursor))
+    }
+
+    /// Create a new document under `parent` with `contents` written verbatim — no
+    /// `${{name}}`/`${{date}}` substitution, unlike `create_document_from_template`
+    /// (that's for *stationery*-style "New From Template"). This is the write path
+    /// `project_template::ProjectTemplate::apply` uses to stamp a project-scaffolding
+    /// template's literal starter content onto a freshly initialized project. Same
+    /// name-validation/collision-refusal path as `create_document`.
+    pub fn create_document_with_content(
+        &mut self,
+        parent: &Path,
+        filename: &str,
+        contents: &str,
+    ) -> io::Result<PathBuf> {
+        self.write_new_document(parent, filename, contents)
+    }
+
+    fn write_new_document(
+        &mut self,
+        parent: &Path,
+        filename: &str,
+        contents: &str,
+    ) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, parent)?;
+        let filename = ensure_md_extension(filename);
+        ensure_simple_child_name(&filename)?;
+        let path = parent.join(&filename);
+        ensure_does_not_exist(self.store.as_ref(), &path)?;
+        self.store.write(&path, contents.as_bytes())?;
+        self.record_document_created(&path);
+        self.record_new_child(parent, &filename)?;
+        self.rescan();
+        Ok(path)
+    }
+
+    /// Create a new empty folder under `parent`, record it, and rescan. Refuses to
+    /// overwrite an existing file or folder at the destination.
+    pub fn create_folder(&mut self, parent: &Path, name: &str) -> io::Result<PathBuf> {
+        ensure_path_within_root(&self.root, parent)?;
+        ensure_simple_child_name(name)?;
+        let path = parent.join(name);
+        ensure_does_not_exist(self.store.as_ref(), &path)?;
+        self.store.create_dir_all(&path)?;
+        self.record_new_child(parent, name)?;
+        self.rescan();
+        Ok(path)
+    }
+
+    fn record_new_child(&mut self, parent: &Path, name: &str) -> io::Result<()> {
+        let key = relative_key(&self.root, parent);
+        self.meta
+            .node_order
+            .entry(key)
+            .or_default()
+            .push(name.to_string());
+        self.save_metadata()
+    }
+}

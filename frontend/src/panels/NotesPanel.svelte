@@ -1,0 +1,110 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { project, openDocument } from "../stores/project.svelte";
+
+  // List + delete only, same as the real app's own notes_panel.rs: creating
+  // a note needs a specific editor cursor position, which this panel has no
+  // way to ask for on its own. That's the Add Note at Cursor shortcut's job
+  // (MarkdownEditor.svelte -> NotePromptDialog.svelte -> `note_upsert`) —
+  // this panel only ever lists what already exists and lets you jump to or
+  // delete it. The real app's editor also offers a gutter click as a second
+  // entry point (see its own `paint_gutter`); that's still unported here
+  // (tracked separately, see the `editor-gutter` branch), so the shortcut
+  // is this port's only way in for now.
+  type Note = {
+    id: string;
+    path: string;
+    line: number;
+    column: number;
+    text: string;
+    document_stem: string | null;
+  };
+
+  let notes = $state<Note[]>([]);
+  let error = $state<string | null>(null);
+
+  onMount(refresh);
+
+  async function refresh() {
+    try {
+      notes = await invoke<Note[]>("notes_list", { root: project.value!.root });
+    } catch (err) {
+      error = String(err);
+    }
+  }
+
+  async function remove(id: string) {
+    try {
+      await invoke("note_delete", { root: project.value!.root, id });
+      await refresh();
+    } catch (err) {
+      error = String(err);
+    }
+  }
+</script>
+
+<div class="panel">
+  {#if error}<p class="error">{error}</p>{/if}
+  {#if notes.length === 0}
+    <p class="empty">No notes yet — add one with the editor's Add Note at Cursor shortcut.</p>
+  {:else}
+    <ul>
+      {#each notes as note (note.id)}
+        <li>
+          <button
+            class="goto"
+            disabled={!note.document_stem}
+            onclick={() => openDocument(note.path)}
+          >
+            {note.document_stem ?? "(not found)"}:{note.line}
+          </button>
+          <p class="text">{note.text}</p>
+          <button class="delete" onclick={() => remove(note.id)}>Delete</button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+
+<style>
+  .panel {
+    height: 100%;
+    overflow: auto;
+    padding: 0.5rem;
+    box-sizing: border-box;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .goto {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    font-weight: bold;
+  }
+
+  .text {
+    margin: 0.2rem 0;
+    font-size: 0.85rem;
+  }
+
+  .empty {
+    color: var(--color-fg-muted);
+  }
+
+  .error {
+    color: var(--color-danger);
+  }
+</style>

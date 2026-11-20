@@ -28,7 +28,7 @@ pull request, and the bot will mark it signed:
 
 The self-hosted sync feature is experimental (its formats and protocol may still change without migrations). It spans this repo and two others:
 
-- `src/sync/` — the client core (CRDT documents, manifest, engine, crypto). Unit tests include multi-device simulations against an in-memory server, so most logic can be tested without a network: `cargo test --lib sync::`. This repo depends on `smaragd-sync-protocol` as a git dependency (see root `Cargo.toml`).
+- `core/src/sync/` — the client core (CRDT documents, manifest, engine, crypto), shared by the `app` (egui) and `app-tauri` (Tauri) frontends — see [ARCHITECTURE.md](ARCHITECTURE.md). Unit tests include multi-device simulations against an in-memory server, so most logic can be tested without a network: `cargo test -p smaragd-core --lib sync::`. Each of `core`/`app`/`app-tauri` depends on `smaragd-sync-protocol` as a git dependency (see their `Cargo.toml`s).
 - [smaragd-sync](https://github.com/smaragd-editor/smaragd-sync) — the wire protocol crate and the server, in one workspace. See its own README/CONTRIBUTING for how to work on those.
 - [smaragd-sync-e2e](https://github.com/smaragd-editor/smaragd-sync-e2e) — end-to-end tests of the real client against the real server. See its own README.
 

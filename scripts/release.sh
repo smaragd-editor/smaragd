@@ -63,8 +63,8 @@ fi
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 repo_root="$PWD"
 
-if [ ! -f Cargo.toml ] || ! grep -q '^name = "smaragd"' Cargo.toml; then
-    echo "error: expected to find the smaragd Cargo.toml at $repo_root" >&2
+if [ ! -f app/Cargo.toml ] || ! grep -q '^name = "smaragd"' app/Cargo.toml; then
+    echo "error: expected to find the smaragd Cargo.toml at $repo_root/app" >&2
     exit 1
 fi
 
@@ -105,9 +105,9 @@ else
     echo "warning: couldn't resolve main@origin (no remote tracking data?) — skipping the fast-forward check" >&2
 fi
 
-current_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+current_version="$(sed -n 's/^version = "\(.*\)"/\1/p' app/Cargo.toml | head -1)"
 if [ "$current_version" = "$version" ]; then
-    echo "error: Cargo.toml is already at version $version" >&2
+    echo "error: app/Cargo.toml is already at version $version" >&2
     exit 1
 fi
 if [ "$(printf '%s\n%s\n' "$current_version" "$version" | sort -V | tail -n1)" != "$version" ]; then
@@ -178,7 +178,7 @@ awk -v ver="$version" -v date="$release_date" '
 ' RELEASENOTES.md >RELEASENOTES.md.tmp
 mv RELEASENOTES.md.tmp RELEASENOTES.md
 
-sed -i "s/^version = \"$current_version\"/version = \"$version\"/" Cargo.toml
+sed -i "s/^version = \"$current_version\"/version = \"$version\"/" app/Cargo.toml
 files_touched=1
 
 echo "Refreshing Cargo.lock..."
@@ -190,7 +190,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --all-features
 
 echo
-echo "RELEASENOTES.md, Cargo.toml, and Cargo.lock updated:"
+echo "RELEASENOTES.md, app/Cargo.toml, and Cargo.lock updated:"
 jj diff --stat
 
 if [ "$assume_yes" -ne 1 ]; then
