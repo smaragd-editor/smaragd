@@ -317,7 +317,7 @@ pub fn show(
         None => {}
     }
 
-    egui::Modal::new(Id::new("command_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("command_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(360.0);
         ui.horizontal(|ui| {
             ui.label(":");

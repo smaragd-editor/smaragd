@@ -11,7 +11,7 @@
 /// frame.
 pub fn show(ctx: &egui::Context, issues: &[String]) -> bool {
     let mut dismissed = false;
-    egui::Modal::new(egui::Id::new("sanity_check_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("sanity_check_modal")).show(ctx, |ui| {
         ui.set_min_width(420.0);
         ui.set_max_width(560.0);
         ui.heading("Project Sanity Check");

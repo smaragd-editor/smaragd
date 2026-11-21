@@ -163,7 +163,7 @@ mod dock_layout_persistence_tests {
         type Tab = DockTab;
 
         fn id(&mut self, tab: &mut DockTab) -> egui::Id {
-            egui::Id::new(*tab)
+            egui::Id::unique(*tab)
         }
 
         fn title(&mut self, tab: &mut DockTab) -> egui::WidgetText {

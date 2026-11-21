@@ -128,7 +128,7 @@ pub fn show(
 
     let mut outcome = None;
     let mut close = false;
-    egui::Modal::new(Id::new("recent_files_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("recent_files_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(420.0);
         ui.heading(state.mode.heading());
         ui.add_space(8.0);

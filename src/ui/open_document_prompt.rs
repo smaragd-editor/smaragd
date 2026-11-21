@@ -95,7 +95,7 @@ pub fn show(
 
     let mut outcome = None;
     let mut close = false;
-    egui::Modal::new(Id::new("open_document_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("open_document_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(420.0);
         ui.heading("Open Document");
         ui.add_space(8.0);

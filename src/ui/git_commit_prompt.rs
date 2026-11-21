@@ -44,7 +44,7 @@ pub fn show(
     } else {
         "Commit"
     };
-    egui::Modal::new(egui::Id::new("git_commit_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("git_commit_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(360.0);
         ui.heading(label);
         ui.add_space(8.0);

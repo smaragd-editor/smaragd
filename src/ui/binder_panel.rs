@@ -355,7 +355,7 @@ fn paint_row_background(
 /// `SmaragdApp`'s session save/restore can read and set a folder's
 /// expanded state without rendering the Binder.
 pub fn folder_collapsing_id(path: &Path) -> egui::Id {
-    egui::Id::new(("binder_folder", path))
+    egui::Id::unique(("binder_folder", path))
 }
 
 /// Whether the folder at `path` is currently expanded in the Binder — `true`

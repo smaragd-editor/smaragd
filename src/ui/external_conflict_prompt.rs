@@ -16,7 +16,7 @@ pub enum ExternalConflictOutcome {
 /// awaiting input.
 pub fn show(ctx: &egui::Context, path: &std::path::Path) -> Option<ExternalConflictOutcome> {
     let mut outcome = None;
-    egui::Modal::new(egui::Id::new("external_conflict_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("external_conflict_modal")).show(ctx, |ui| {
         ui.set_min_width(320.0);
         ui.heading("Changed on Disk");
         ui.add_space(8.0);
