@@ -19,7 +19,7 @@ pub enum ExitConfirmOutcome {
 /// outcome comes back.
 pub fn show(ctx: &egui::Context, _state: &mut ExitConfirmState) -> Option<ExitConfirmOutcome> {
     let mut outcome = None;
-    egui::Modal::new(egui::Id::new("exit_confirm_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("exit_confirm_modal")).show(ctx, |ui| {
         ui.set_min_width(280.0);
         ui.heading("Unsaved Changes");
         ui.add_space(8.0);

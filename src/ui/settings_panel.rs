@@ -228,7 +228,7 @@ pub fn show(
     // frame (which would fight any focus the user later gives a control in the
     // content pane) — see that function's doc comment for why a click used to
     // be required before Up/Down did anything.
-    let was_open_id = egui::Id::new("settings_was_open_last_frame");
+    let was_open_id = egui::Id::unique("settings_was_open_last_frame");
     let was_open = ctx.data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
     let just_opened = *open && !was_open;
     ctx.data_mut(|d| d.insert_temp(was_open_id, *open));
@@ -238,7 +238,7 @@ pub fn show(
     }
     let mut changed = false;
     let mut close_requested = false;
-    let modal_id = egui::Id::new("settings_modal");
+    let modal_id = egui::Id::unique("settings_modal");
     let modal_response = egui::Modal::new(modal_id)
         .area(
             egui::Modal::default_area(modal_id)
@@ -398,7 +398,7 @@ fn show_appearance_category(
     ui.heading("Theme");
     ui.add_space(12.0);
     let previous_theme = settings.theme_preference;
-    settings.theme_preference.radio_buttons(ui);
+    settings.theme_preference.buttons(ui);
     if settings.theme_preference != previous_theme {
         ctx.set_theme(settings.theme_preference);
         changed = true;
@@ -870,7 +870,7 @@ fn show_sync_category(
 
         ui.add_space(10.0);
         ui.strong("Encryption");
-        let show_id = egui::Id::new("sync_passphrase_visible");
+        let show_id = egui::Id::unique("sync_passphrase_visible");
         let mut visible = ui.data(|d| d.get_temp::<bool>(show_id).unwrap_or(false));
         ui.horizontal(|ui| {
             ui.label("Passphrase:");
@@ -1413,7 +1413,7 @@ fn show_recording_modal(
         ShortcutTarget::BuiltIn(action) => action.label().to_string(),
         ShortcutTarget::Plugin(name) => format!(":{name}"),
     };
-    egui::Modal::new(egui::Id::new("shortcut_recording_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("shortcut_recording_modal")).show(ctx, |ui| {
         ui.set_min_width(280.0);
         ui.heading(format!("Press a new shortcut for \"{label}\""));
         ui.label("Press Escape to cancel.");

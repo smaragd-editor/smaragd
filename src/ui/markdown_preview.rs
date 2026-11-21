@@ -811,7 +811,7 @@ fn render_table(
     egui::Frame::new()
         .inner_margin(egui::Margin::same(4))
         .show(ui, |ui| {
-            egui::Grid::new(ui.id().with("md_table"))
+            egui::Grid::new(ui.scope_id().with("md_table"))
                 .striped(true)
                 .spacing(egui::vec2(16.0, 6.0))
                 .show(ui, |ui| {
@@ -962,7 +962,7 @@ fn render_text_run(
     let label = egui::Label::new(job).sense(egui::Sense::click());
     let (galley_pos, galley, mut response) = label.layout_in_ui(ui);
     response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), galley.text())
+        egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), galley.text())
     });
 
     let hovered = response.hover_pos().and_then(|pos| {

@@ -50,7 +50,7 @@ pub fn show(
 
     let mut outcome = None;
     let mut close = false;
-    egui::Modal::new(Id::new("new_project_template_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("new_project_template_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(380.0);
         ui.heading("New Project");
         ui.label("Choose a starting template:");

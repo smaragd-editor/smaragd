@@ -82,7 +82,7 @@ pub(super) fn ensure_editor_tab_present(state: &mut egui_dock::DockState<DockTab
 /// 0.20.1, `src/widgets/dock_area/show/window_surface.rs`): `format!("window
 /// {surf_index:?}").into()`, i.e. `Id::new` of that same formatted string.
 pub(super) fn floating_window_id(surface: egui_dock::SurfaceIndex) -> egui::Id {
-    egui::Id::new(format!("window {surface:?}"))
+    egui::Id::unique(format!("window {surface:?}"))
 }
 
 /// `DockState`'s tree structure (tabs, splits, which surface each lives on)

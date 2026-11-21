@@ -370,7 +370,7 @@ pub fn show(
     let mut outcome = None;
     let mut close = false;
     let settings = setting_candidates();
-    egui::Modal::new(Id::new("search_everywhere_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("search_everywhere_modal")).show(ctx, |ui| {
         ui.set_min_width(560.0);
         ui.horizontal(|ui| {
             for tab in SearchTab::ALL {

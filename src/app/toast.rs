@@ -72,7 +72,7 @@ impl SmaragdApp {
 
         let mut dismiss = None;
         for (index, toast) in self.toasts.iter().enumerate() {
-            egui::Area::new(egui::Id::new("toast").with(index))
+            egui::Area::new(egui::Id::unique("toast").with(index))
                 .anchor(
                     egui::Align2::RIGHT_TOP,
                     egui::vec2(-12.0, 12.0 + index as f32 * 56.0),

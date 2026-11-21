@@ -284,8 +284,8 @@ fn misspelled_word_at(
 /// simultaneously-open tabs.
 pub fn document_text_edit_id(path: Option<&Path>) -> Id {
     match path {
-        Some(path) => Id::new("smaragd_editor_text_edit").with(path),
-        None => Id::new("smaragd_editor_text_edit_collab"),
+        Some(path) => Id::unique("smaragd_editor_text_edit").with(path),
+        None => Id::unique("smaragd_editor_text_edit_collab"),
     }
 }
 
@@ -1200,7 +1200,7 @@ fn render_popup(
     let popup_pos = output.galley_pos + cursor_rect.left_bottom().to_vec2();
 
     let mut clicked = None;
-    egui::Area::new(Id::new("wikilink_autocomplete_popup"))
+    egui::Area::new(Id::unique("wikilink_autocomplete_popup"))
         .order(egui::Order::Foreground)
         .fixed_pos(popup_pos)
         .show(ui.ctx(), |ui| {

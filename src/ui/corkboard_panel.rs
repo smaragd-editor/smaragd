@@ -468,7 +468,7 @@ pub fn show_card_editor(
         None => {}
     }
 
-    egui::Modal::new(egui::Id::new("story_card_editor_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("story_card_editor_modal")).show(ctx, |ui| {
         ui.set_min_width(640.0);
         ui.heading(if draft.is_new {
             "New Story Card"

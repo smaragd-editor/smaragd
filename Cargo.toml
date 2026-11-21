@@ -20,11 +20,11 @@ chacha20poly1305 = "0.11.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 directories = "6.0"
 docx-rs = "0.4.22"
-eframe = "0.36"
-egui = { version = "0.36", features = ["serde"] }
-egui_dock = { version = "0.21", features = ["serde"] }
-egui_extras = { version = "0.36.1", features = ["image", "file"] }
-egui_plot = "0.37"
+eframe = "0.37"
+egui = { version = "0.37", features = ["serde", "monochrome_emoji_fonts"] }
+egui_dock = { version = "0.22", features = ["serde"] }
+egui_extras = { version = "0.37", features = ["image", "file"] }
+egui_plot = "0.38"
 epub-builder = "0.8.3"
 ignore = "0.4"
 # PNG-encoding clipboard images for pasting into the editor (src/attachments.rs).

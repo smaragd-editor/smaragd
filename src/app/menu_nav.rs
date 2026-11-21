@@ -85,7 +85,7 @@ const TOP_MENUS: [(&str, egui::Key); 8] = [
 /// a *sibling* menu's popup by label alone on a Left/Right press, without having
 /// that sibling's `Response` (it may not have rendered yet this frame).
 fn top_menu_popup_id(label: &str) -> egui::Id {
-    egui::Id::new("top_menu_popup").with(label)
+    egui::Id::unique("top_menu_popup").with(label)
 }
 
 /// A top-level menu-bar button (File/Edit/View/...) that also drops down when

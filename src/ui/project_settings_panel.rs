@@ -93,7 +93,7 @@ pub fn show(
     project: &Project,
     settings: &Settings,
 ) -> Option<ProjectSettingsEvent> {
-    let was_open_id = egui::Id::new("project_settings_was_open_last_frame");
+    let was_open_id = egui::Id::unique("project_settings_was_open_last_frame");
     let was_open = ctx.data(|d| d.get_temp::<bool>(was_open_id).unwrap_or(false));
     let just_opened = *open && !was_open;
     ctx.data_mut(|d| d.insert_temp(was_open_id, *open));
@@ -103,7 +103,7 @@ pub fn show(
     }
     let mut event = None;
     let mut close_requested = false;
-    let modal_id = egui::Id::new("project_settings_modal");
+    let modal_id = egui::Id::unique("project_settings_modal");
     let modal_response = egui::Modal::new(modal_id)
         .area(
             egui::Modal::default_area(modal_id)
@@ -311,7 +311,7 @@ fn show_attachments_category(ui: &mut egui::Ui, project: &Project) -> Option<Pro
     {
         event = Some(ProjectSettingsEvent::SetAttachmentDestination(destination));
     }
-    let folder_error_id = ui.id().with("attachments_folder_error");
+    let folder_error_id = ui.scope_id().with("attachments_folder_error");
     ui.add_enabled_ui(
         project.attachment_destination() == AttachmentDestination::ConfiguredFolder,
         |ui| {

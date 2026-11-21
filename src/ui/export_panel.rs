@@ -27,7 +27,7 @@ pub fn show(
     styles: &[TypesetStyle],
 ) -> Option<ExportAction> {
     let mut action = None;
-    egui::Modal::new(egui::Id::new("export_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("export_modal")).show(ctx, |ui| {
         ui.set_min_width(320.0);
         ui.heading("Export");
         ui.label(format!("Compiling: {source_label}"));

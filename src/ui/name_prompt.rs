@@ -46,7 +46,7 @@ pub enum NamePromptOutcome {
 /// is still open and awaiting input.
 pub fn show(ctx: &egui::Context, state: &mut NamePromptState) -> Option<NamePromptOutcome> {
     let mut outcome = None;
-    egui::Modal::new(egui::Id::new("name_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("name_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(240.0);
         ui.heading(&state.title);
         ui.add_space(8.0);

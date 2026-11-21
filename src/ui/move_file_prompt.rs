@@ -97,7 +97,7 @@ pub fn show(
     let just_navigated = nav_action.is_some();
 
     let mut outcome = None;
-    egui::Modal::new(Id::new("move_file_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(Id::unique("move_file_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(420.0);
         ui.heading("Move File To…");
         ui.add_space(4.0);

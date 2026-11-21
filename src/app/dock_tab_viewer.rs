@@ -245,7 +245,7 @@ impl egui_dock::TabViewer for AppTabViewer<'_> {
     /// `DockTab` is a plain, `Hash`-derived enum, so its own identity is already
     /// a stable, unique id — no need for a title- or index-derived one.
     fn id(&mut self, tab: &mut DockTab) -> egui::Id {
-        egui::Id::new(*tab)
+        egui::Id::unique(*tab)
     }
 
     fn title(&mut self, tab: &mut DockTab) -> egui::WidgetText {

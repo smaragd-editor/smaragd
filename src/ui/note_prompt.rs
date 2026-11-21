@@ -41,7 +41,7 @@ pub enum NotePromptOutcome {
 /// while `None`, the dialog is still open and awaiting input.
 pub fn show(ctx: &egui::Context, state: &mut NotePromptState) -> Option<NotePromptOutcome> {
     let mut outcome = None;
-    egui::Modal::new(egui::Id::new("note_prompt_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("note_prompt_modal")).show(ctx, |ui| {
         ui.set_min_width(320.0);
         ui.heading("Note");
         ui.add_space(8.0);

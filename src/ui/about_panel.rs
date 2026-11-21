@@ -8,7 +8,7 @@
 /// Escape both resolve to the same outcome rather than confirm/cancel.
 pub fn show(ctx: &egui::Context) -> bool {
     let mut close = false;
-    egui::Modal::new(egui::Id::new("about_modal")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("about_modal")).show(ctx, |ui| {
         ui.set_min_width(280.0);
         ui.heading("Smaragd");
         ui.add_space(8.0);
