@@ -9828,27 +9828,27 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/ureq/ureq-3.5.0.crate",
-        "sha256": "cde93ff05758a36a851a398a772b0b79a82fbe3c186a46f2696baaeaf84c966b",
-        "dest": "cargo/vendor/ureq-3.5.0"
+        "url": "https://static.crates.io/crates/ureq/ureq-3.5.2.crate",
+        "sha256": "3ac5cecf619ca81f66a96482db09687c9f7465af65f4300a8c30cca05bd5a59d",
+        "dest": "cargo/vendor/ureq-3.5.2"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"cde93ff05758a36a851a398a772b0b79a82fbe3c186a46f2696baaeaf84c966b\", \"files\": {}}",
-        "dest": "cargo/vendor/ureq-3.5.0",
+        "contents": "{\"package\": \"3ac5cecf619ca81f66a96482db09687c9f7465af65f4300a8c30cca05bd5a59d\", \"files\": {}}",
+        "dest": "cargo/vendor/ureq-3.5.2",
         "dest-filename": ".cargo-checksum.json"
     },
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/ureq-proto/ureq-proto-0.6.5.crate",
-        "sha256": "841583fc36089d7d59419568ae157f43a5a03a2e5a81ba87c77d1596ef46e922",
-        "dest": "cargo/vendor/ureq-proto-0.6.5"
+        "url": "https://static.crates.io/crates/ureq-proto/ureq-proto-0.7.1.crate",
+        "sha256": "622dce33c252115466d83f63e9744a18f12b4406aae51a01c15ad8fcf1185eb3",
+        "dest": "cargo/vendor/ureq-proto-0.7.1"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"841583fc36089d7d59419568ae157f43a5a03a2e5a81ba87c77d1596ef46e922\", \"files\": {}}",
-        "dest": "cargo/vendor/ureq-proto-0.6.5",
+        "contents": "{\"package\": \"622dce33c252115466d83f63e9744a18f12b4406aae51a01c15ad8fcf1185eb3\", \"files\": {}}",
+        "dest": "cargo/vendor/ureq-proto-0.7.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
